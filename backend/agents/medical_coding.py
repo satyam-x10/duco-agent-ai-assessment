@@ -1,0 +1,39 @@
+import logging
+from app.core.adk import Agent, SharedWorkflowState
+from app.schemas.intake import DocumentType
+from app.schemas.medical_coding import CodingResult
+from services.medical_coding import MedicalCodingService
+
+logger = logging.getLogger(__name__)
+
+
+class MedicalCodingAgent(Agent):
+    """Specialist agent responsible for extracting CPT procedure and ICD-10 diagnosis codes from parsed documents."""
+
+    def __init__(self, medical_coding_service: MedicalCodingService):
+        super().__init__("MedicalCodingAgent")
+        self.medical_coding_service = medical_coding_service
+
+    async def execute(self, state: SharedWorkflowState) -> None:
+        logger.info(f"{self.name} analyzing documents for claim {state.claim_id}")
+        
+        aggregated_result = CodingResult(diagnoses=[], procedures=[])
+        
+        # Analyze clinical files and aggregate coding results
+        for doc_type, doc in state.processed_documents.items():
+            # Skip user transcript query itself for medical coding, process clinical reports/invoices only
+            if doc_type == DocumentType.USER_QUERY_TRANSCRIPT:
+                continue
+                
+            logger.info(f"{self.name} executing medical coding on {doc_type.value}")
+            result = await self.medical_coding_service.analyze_document(doc)
+            
+            # Aggregate procedure and diagnosis lists
+            aggregated_result.diagnoses.extend(result.diagnoses)
+            aggregated_result.procedures.extend(result.procedures)
+            
+        state.coding_result = aggregated_result
+        logger.info(
+            f"{self.name} completed coding. Extracted {len(state.coding_result.procedures)} procedures "
+            f"and {len(state.coding_result.diagnoses)} diagnoses."
+        )

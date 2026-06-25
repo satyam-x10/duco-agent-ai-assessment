@@ -7,7 +7,120 @@ import { RequirementSlotCard } from '../../components/intake/RequirementSlotCard
 import type { RequirementSlot, RequirementSlotId, UploadedFile } from '../../types/intake';
 import { ApiService } from '../../services/api';
 
+const DEMO_FILES: Record<
+  RequirementSlotId,
+  { filename: string; contentType: string; text: string }
+> = {
+  priya_pt_invoice: {
+    filename: 'priya_pt_invoice.pdf',
+    contentType: 'application/pdf',
+    text: `Peak Physical Therapy Clinic
+Invoice ID: PT-2023-9981
+Date: Oct 18, 2023
+Patient Name: Priya Sen
+
+Billing details:
+Date       CPT Code  Description                         Units  Unit Cost  Total
+2023-10-10 97110     Therapeutic Procedure [Exercise]    1      $150.00    $150.00
+2023-10-12 97110     Therapeutic Procedure [Exercise]    1      $150.00    $150.00
+2023-10-15 97110     Therapeutic Procedure [Exercise]    1      $150.00    $150.00
+2023-10-10 97140     Manual Therapy Techniques           1      $100.00    $100.00
+2023-10-12 97140     Manual Therapy Techniques           1      $100.00    $100.00
+
+Total Billed: $650.00
+Amount Paid: $0.00 [Pending insurance coordination]`
+  },
+  aarav_mri_report: {
+    filename: 'aarav_mri_report.pdf',
+    contentType: 'application/pdf',
+    text: `Metro Imaging and Radiology Services
+Report ID: RAD-MRI-8827
+Date: Oct 20, 2023
+Patient Name: Aarav Sen
+Date of Birth: 2012-05-14
+
+Procedure Code: CPT 73721 [MRI Lower Extremity Joint without contrast, Right Knee]
+
+Clinical History: Knee pain following sports activity. Medial joint line tenderness.
+
+Findings:
+There is a complete vertical tear of the posterior horn of the medial meniscus.
+Minimal joint effusion is present. The anterior cruciate ligament [ACL] and posterior
+cruciate ligament [PCL] are intact. Collateral ligaments are normal.
+
+Diagnosis: Complete medial meniscus posterior horn tear, right knee joint.
+Total Facility Charge: $1200.00`
+  },
+  surgeon_estimate: {
+    filename: 'surgeon_estimate.pdf',
+    contentType: 'application/pdf',
+    text: `Knee Specialist Clinic & Surgical Center
+Surgical Estimate ID: EST-5527
+Date: Oct 22, 2023
+Patient Name: Aarav Sen
+Date of Birth: 2012-05-14
+
+Proposed Procedure: Right Knee Arthroscopy with Medial Meniscectomy
+Procedure Code: CPT 29881 [Knee arthroscopy with meniscectomy]
+Scheduled Date: Nov 15, 2023
+
+Fee Schedule Estimates:
+1. Surgeon Professional Fee [CPT 29881]: $3200.00
+2. Facility Operating Room Fee [Metro Surgical]: $4500.00
+3. Anesthesia Fee [Standard Pro-rata 2hr]: $1200.00
+
+Total Billed Estimate: $8900.00
+Pre-authorization is required for CPT 29881.`
+  },
+  user_query_transcript: {
+    filename: 'user_query_transcript.txt',
+    contentType: 'text/plain',
+    text: `Coordination of Benefits [COB] Query Transcript
+Date: Oct 24, 2023
+User Query:
+"Hello, I am setting up the Coordination of Benefits for my family. My wife Priya Sen has dual coverage: she is the primary subscriber under BlueShield Cross [Group: BS120, Member: 98765] and she is also covered as a dependent under my secondary plan UnitedHealth [Group: UHC-567-GOLD, Member: 54321].
+Additionally, my son Aarav Sen is covered under both plans. I am the primary subscriber for Aarav under UnitedHealth [Group: UHC-567-GOLD, Member: 54321], and he is a dependent under Priya's BlueShield Cross [Group: BS120, Member: 98765].
+Priya recently completed physical therapy [billed amount $650.00] and Aarav has an upcoming knee meniscus surgery [surgeon estimate $8,900.00 and MRI facility cost $1,200.00].
+Could you analyze these documents, determine which plan is primary for Priya and Aarav, calculate what each insurer is responsible to pay, and write the prior-authorization request letters?"`
+  }
+};
+
+const generateDemoFile = (slotId: RequirementSlotId): File => {
+  const spec = DEMO_FILES[slotId];
+  if (spec.contentType === 'application/pdf') {
+    const escapedText = spec.text.replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+    const streamBytes = `BT\n/F1 12 Tf\n70 700 Td\n(${escapedText}) Tj\nET`;
+    const pdfTemplate = `%PDF-1.4
+1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
+2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj
+3 0 obj <</Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /MediaBox [0 0 612 792] /Contents 4 0 R>> endobj
+4 0 obj <</Length ${streamBytes.length}>> stream
+${streamBytes}
+endstream
+endobj
+5 0 obj <</Type /Font /Subtype /Type1 /BaseFont /Helvetica>> endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000056 00000 n 
+0000000111 00000 n 
+0000000236 00000 n 
+0000000341 00000 n 
+trailer <</Size 6 /Root 1 0 R>>
+startxref
+412
+%%EOF`;
+    const blob = new Blob([pdfTemplate], { type: 'application/pdf' });
+    return new File([blob], spec.filename, { type: 'application/pdf' });
+  } else {
+    const blob = new Blob([spec.text], { type: 'text/plain' });
+    return new File([blob], spec.filename, { type: 'text/plain' });
+  }
+};
+
 export const IntakePage: React.FC = () => {
+
     const navigate = useNavigate();
     // Predefined requirement slots
     const requirementSlots: RequirementSlot[] = [
@@ -49,6 +162,7 @@ export const IntakePage: React.FC = () => {
     const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'completed' | 'failed'>('idle');
     const [progress, setProgress] = useState(0);
     const [phaseMessage, setPhaseMessage] = useState('');
+    const [isDemoLoading, setIsDemoLoading] = useState(false);
 
     // Fetch existing files from backend storage on mount
     useEffect(() => {
@@ -212,6 +326,52 @@ export const IntakePage: React.FC = () => {
         setPhaseMessage('');
     };
 
+    const loadDemoScenario = async () => {
+        setIsDemoLoading(true);
+        try {
+            // Set all slots to uploading locally first
+            setUploadedFiles({
+                priya_pt_invoice: { name: 'priya_pt_invoice.pdf', size: 0, type: 'application/pdf', status: 'uploading', slotId: 'priya_pt_invoice' },
+                aarav_mri_report: { name: 'aarav_mri_report.pdf', size: 0, type: 'application/pdf', status: 'uploading', slotId: 'aarav_mri_report' },
+                surgeon_estimate: { name: 'surgeon_estimate.pdf', size: 0, type: 'application/pdf', status: 'uploading', slotId: 'surgeon_estimate' },
+                user_query_transcript: { name: 'user_query_transcript.txt', size: 0, type: 'text/plain', status: 'uploading', slotId: 'user_query_transcript' },
+            });
+
+            const slots: RequirementSlotId[] = [
+                'priya_pt_invoice',
+                'aarav_mri_report',
+                'surgeon_estimate',
+                'user_query_transcript',
+            ];
+
+            const results: Record<RequirementSlotId, UploadedFile | undefined> = {
+                priya_pt_invoice: undefined,
+                aarav_mri_report: undefined,
+                surgeon_estimate: undefined,
+                user_query_transcript: undefined,
+            };
+
+            for (const slotId of slots) {
+                const file = generateDemoFile(slotId);
+                const uploadedFile = await ApiService.uploadDocument(file, slotId);
+                results[slotId] = uploadedFile;
+            }
+
+            setUploadedFiles(results);
+        } catch (err) {
+            console.error('Failed to load demo scenario:', err);
+            // Reset and sync with backend
+            try {
+                const syncedFiles = await ApiService.fetchIntakeStatus();
+                setUploadedFiles(syncedFiles);
+            } catch (syncErr) {
+                console.error('Failed to sync workspace after demo failure:', syncErr);
+            }
+        } finally {
+            setIsDemoLoading(false);
+        }
+    };
+
     // Compute metrics
     const activeFiles = Object.values(uploadedFiles).filter((f) => f && f.status === 'ready') as UploadedFile[];
     const occupiedSlotIds = (Object.values(uploadedFiles).filter((f) => f && (f.status === 'ready' || f.status === 'uploading')) as UploadedFile[]).map((f) => f.slotId);
@@ -296,13 +456,33 @@ export const IntakePage: React.FC = () => {
                             Required Documents List
                         </h2>
                         <div className="flex items-center gap-3">
-                            {!isWorkspaceEmpty && (
+                            {!isWorkspaceEmpty ? (
                                 <button
                                     onClick={resetWorkspace}
                                     type="button"
-                                    className="text-xs font-bold text-rose-600 hover:text-rose-700 transition-colors cursor-pointer"
+                                    disabled={isDemoLoading}
+                                    className={`text-xs font-bold text-rose-600 hover:text-rose-700 transition-colors ${isDemoLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                                 >
                                     Clear All
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={loadDemoScenario}
+                                    type="button"
+                                    disabled={isDemoLoading}
+                                    className={`text-xs font-bold text-blue-600 hover:text-blue-755 transition-colors flex items-center gap-1.5 ${isDemoLoading ? 'opacity-50 cursor-not-allowed animate-pulse' : 'cursor-pointer'}`}
+                                >
+                                    {isDemoLoading ? (
+                                        <>
+                                            <svg className="animate-spin h-3 w-3 text-blue-600" viewBox="0 0 24 24" fill="none">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Loading Demo...
+                                        </>
+                                    ) : (
+                                        '✨ Load Demo Scenario'
+                                    )}
                                 </button>
                             )}
                             <span className="text-xs font-semibold text-slate-400">
@@ -334,6 +514,24 @@ export const IntakePage: React.FC = () => {
                             <p className="mt-1 text-[11px] text-slate-400 max-w-sm mx-auto">
                                 No documents have been loaded. Pick a target category on the left to upload the medical records and estimate sheets.
                             </p>
+                            <button
+                                onClick={loadDemoScenario}
+                                type="button"
+                                disabled={isDemoLoading}
+                                className={`mt-5 inline-flex items-center gap-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/50 px-4.5 py-2 text-xs font-bold shadow-sm transition-all ${isDemoLoading ? 'opacity-50 cursor-not-allowed animate-pulse' : 'cursor-pointer hover:translate-y-[-1px]'}`}
+                            >
+                                {isDemoLoading ? (
+                                    <>
+                                        <svg className="animate-spin h-3.5 w-3.5 text-blue-750" viewBox="0 0 24 24" fill="none">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Preparing Scenario...
+                                    </>
+                                ) : (
+                                    '✨ Load Demo Scenario'
+                                )}
+                            </button>
                         </div>
                     )}
 

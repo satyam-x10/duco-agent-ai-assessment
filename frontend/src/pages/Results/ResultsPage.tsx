@@ -504,15 +504,35 @@ export const ResultsPage: React.FC = () => {
                 </svg>
               </div>
               <span className="text-xs font-bold text-slate-800">TTS Audio Adjudication Briefing</span>
-              <p className="text-[10px] text-slate-400 mt-1.5 font-semibold">Duration: {report.audio_summary?.duration_seconds || '78.5'}s</p>
+              <p className="text-[10px] text-slate-400 mt-1.5 font-semibold">Duration: {report.audio_briefing?.estimated_duration_seconds || '78.5'}s</p>
 
               <button
                 type="button"
                 className="mt-3.5 rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors w-full cursor-pointer"
               >
-                Play Audio Briefing
+                Play Audio Briefing (Demo Only)
               </button>
             </div>
+
+            {/* Patient Briefing Narration Script */}
+            {report.audio_briefing && (
+              <div className="mt-6 border-t border-slate-150 pt-5">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-450 mb-3 flex items-center justify-between">
+                  <span>Patient Briefing Script</span>
+                  <span className="text-[9px] font-semibold text-blue-650 bg-blue-50 px-1.5 py-0.5 rounded">Future TTS Ready</span>
+                </h4>
+                <div className="space-y-3.5 text-xs">
+                  {report.audio_briefing.sections.map((section: any, idx: number) => (
+                    <div key={idx} className="bg-slate-50/50 rounded-xl p-3 border border-slate-100">
+                      <span className="font-extrabold text-slate-700 block text-[10px] uppercase tracking-wide mb-1">
+                        {section.title}
+                      </span>
+                      <p className="text-slate-600 leading-relaxed font-medium">{section.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
         </div>

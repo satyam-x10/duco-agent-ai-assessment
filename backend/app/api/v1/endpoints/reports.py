@@ -205,6 +205,11 @@ async def get_report_summary(job_id: str = "mock-job-id"):
             )
         )
 
+    # Generate audio briefing using AudioBriefingService
+    from app.dependencies.audio import get_audio_briefing_service
+    briefing_service = get_audio_briefing_service()
+    briefing_res = briefing_service.generate_briefing(state)
+
     return ReportSummaryResponse(
         job_id=job_id,
         patient_name=patient_name,
@@ -217,7 +222,7 @@ async def get_report_summary(job_id: str = "mock-job-id"):
         ),
         preauth_letters=preauth_letters,
         audio_summary=AudioMetadata(
-            duration_seconds=78.5,
+            duration_seconds=briefing_res.briefing.estimated_duration_seconds,
             generated_at=datetime.utcnow(),
             download_url="/api/v1/reports/download/audio_summary.mp3"
         ),
@@ -226,6 +231,7 @@ async def get_report_summary(job_id: str = "mock-job-id"):
         trace=trace_schemas,
         coding_result=state.coding_result,
         warnings=state.warnings,
-        letters=preauth_res.letters
+        letters=preauth_res.letters,
+        audio_briefing=briefing_res.briefing
     )
 

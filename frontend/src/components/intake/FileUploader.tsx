@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import type { RequirementSlot, RequirementSlotId } from '../../types/intake';
 
 interface FileUploaderProps {
@@ -17,6 +17,18 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   const [error, setError] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-advance/select the next unoccupied slot
+  useEffect(() => {
+    if (!selectedSlotId || occupiedSlots.includes(selectedSlotId)) {
+      const nextEmptySlot = slots.find((s) => !occupiedSlots.includes(s.id));
+      if (nextEmptySlot) {
+        setSelectedSlotId(nextEmptySlot.id);
+      } else {
+        setSelectedSlotId('');
+      }
+    }
+  }, [occupiedSlots, slots, selectedSlotId]);
 
   // Filter allowed formats based on selected slot, or show general formats
   const currentSlot = slots.find((s) => s.id === selectedSlotId);

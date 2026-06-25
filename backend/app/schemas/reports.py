@@ -3,6 +3,7 @@ from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
 from app.schemas.medical_coding import CodingResult
 from app.schemas.preauth import PreAuthLetter
+from app.schemas.audio import AudioBriefing
 
 
 class FinancialSummary(BaseModel):
@@ -52,4 +53,6 @@ class ReportSummaryResponse(BaseModel):
     coding_result: Optional[CodingResult] = Field(None, description="Diagnostic and procedural medical codes")
     warnings: List[str] = Field(default_factory=list, description="Reviewer validation warnings")
     letters: List[PreAuthLetter] = Field(default_factory=list, description="Rendered markdown pre-authorization letters content")
+    audio_briefing: Optional[AudioBriefing] = Field(None, description="Structured patient audio briefing summary narration")
+
 

@@ -78,4 +78,28 @@ async def get_analysis_status(jobId: str):
             job["message"] = "Pre-authorization documents drafted. Analysis completed."
             job["completed_at"] = datetime.utcnow()
             
+            # Execute orchestrator pipeline on uploaded files
+            try:
+                from app.dependencies.orchestration import get_orchestrator
+                from app.dependencies.storage import get_storage_service
+                from app.core.adk import SharedWorkflowState
+                
+                storage_service = get_storage_service()
+                status_map = await storage_service.get_status()
+                
+                # Check patient target based on MRI vs PT
+                patient_name = "Priya Sen"
+                member_id = "98765"
+                if status_map.get("aarav_mri_report"):
+                    patient_name = "Aarav Sen"
+                    member_id = "54321"
+                    
+                state = SharedWorkflowState(claim_id=f"CLAIM-{jobId[:8].upper()}", member_id=member_id)
+                orchestrator = get_orchestrator()
+                await orchestrator.execute(state, max_retries=1)
+                job["state"] = state
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Failed to run orchestrator on job completion: {e}", exc_info=True)
+            
     return AnalysisStatusResponse(**job)

@@ -1,6 +1,7 @@
 import pytest
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 from app.schemas.intake import DocumentType
 from services.document_intelligence import (
     DocumentProcessorFactory,
@@ -39,29 +40,102 @@ async def test_text_processor():
 
 
 @pytest.mark.asyncio
-async def test_pdf_processor():
-    processor = PDFProcessor()
-    pdf_path = Path("mock_invoice.pdf")
+@patch("services.document_intelligence.PdfReader")
+async def test_pdf_processor_with_extractable_text(mock_pdf_reader):
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "Peak Physical Therapy billing details CPT 97110"
+    mock_pdf_reader.return_value.pages = [mock_page]
     
-    processed = await processor.process(pdf_path, DocumentType.PRIYA_PT_INVOICE)
-    assert "Peak Physical Therapy" in processed.extracted_text
-    assert "97110" in processed.extracted_text
-    assert processed.page_count == 1
-    assert processed.confidence == 0.99
-    assert processed.metadata["parser"] == "PDFProcessor"
+    with tempfile.NamedTemporaryFile(suffix=".pdf", mode="wb", delete=False) as tmp:
+        tmp.write(b"%PDF-1.4 mock content")
+        tmp_path = Path(tmp.name)
+        
+    try:
+        processor = PDFProcessor()
+        processed = await processor.process(tmp_path, DocumentType.PRIYA_PT_INVOICE)
+        
+        assert "Peak Physical Therapy" in processed.extracted_text
+        assert processed.page_count == 1
+        assert processed.confidence == 0.99
+        assert processed.metadata["parser"] == "PDFProcessor"
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 
 @pytest.mark.asyncio
-async def test_image_processor():
-    processor = ImageProcessor()
-    img_path = Path("mock_mri.png")
+@patch("services.document_intelligence.PdfReader")
+@patch("services.document_intelligence.genai.GenerativeModel")
+async def test_pdf_processor_scanned_fallback(mock_genai_model, mock_pdf_reader, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
     
-    processed = await processor.process(img_path, DocumentType.AARAV_MRI_REPORT)
-    assert "Metro Imaging" in processed.extracted_text
-    assert "meniscus posterior horn tear" in processed.extracted_text.lower()
-    assert processed.page_count == 1
-    assert processed.confidence == 0.96
-    assert processed.metadata["parser"] == "ImageProcessor"
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "" # No extractable text
+    mock_pdf_reader.return_value.pages = [mock_page]
+    
+    mock_response = MagicMock()
+    mock_response.text = "Scanned PDF extracted content via Gemini OCR"
+    mock_genai_model.return_value.generate_content.return_value = mock_response
+    
+    with tempfile.NamedTemporaryFile(suffix=".pdf", mode="wb", delete=False) as tmp:
+        tmp.write(b"%PDF-1.4 mock content")
+        tmp_path = Path(tmp.name)
+        
+    try:
+        processor = PDFProcessor()
+        processed = await processor.process(tmp_path, DocumentType.PRIYA_PT_INVOICE)
+        
+        assert processed.extracted_text == "Scanned PDF extracted content via Gemini OCR"
+        assert processed.confidence == 0.90
+        assert processed.metadata["parser"] == "PDFProcessor (OCR Fallback)"
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+@pytest.mark.asyncio
+@patch("services.document_intelligence.genai.GenerativeModel")
+async def test_image_processor_gemini(mock_genai_model, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
+    
+    mock_response = MagicMock()
+    mock_response.text = "Metro Imaging radiology report findings meniscus tear"
+    mock_genai_model.return_value.generate_content.return_value = mock_response
+    
+    with tempfile.NamedTemporaryFile(suffix=".png", mode="w", delete=False) as tmp:
+        tmp.write("")
+        tmp_path = Path(tmp.name)
+        
+    try:
+        processor = ImageProcessor()
+        processed = await processor.process(tmp_path, DocumentType.AARAV_MRI_REPORT)
+        
+        assert "radiology report findings" in processed.extracted_text
+        assert processed.confidence == 0.98
+        assert processed.metadata["ocr_method"] == "GeminiVisionOCR"
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_image_processor_no_api_key(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    
+    with tempfile.NamedTemporaryFile(suffix=".png", mode="w", delete=False) as tmp:
+        tmp.write("")
+        tmp_path = Path(tmp.name)
+        
+    try:
+        processor = ImageProcessor()
+        processed = await processor.process(tmp_path, DocumentType.AARAV_MRI_REPORT)
+        
+        assert "Metro Imaging" in processed.extracted_text
+        assert processed.confidence == 0.96
+        assert processed.metadata["ocr_method"] == "GeminiVisionMockFallback"
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 
 def test_factory_resolutions():
@@ -82,3 +156,4 @@ async def test_service_file_not_found(doc_intel_service):
     non_existent_path = Path("non_existent_file.pdf")
     with pytest.raises(FileNotFoundError):
         await doc_intel_service.process_document(non_existent_path, DocumentType.SURGEON_ESTIMATE)
+

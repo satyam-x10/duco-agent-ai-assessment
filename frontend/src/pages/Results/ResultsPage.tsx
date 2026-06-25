@@ -162,7 +162,7 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
               </button>
               
               {isExpanded && (
-                <div className="border-t border-slate-150 bg-slate-950 p-5 font-mono text-[11px] leading-relaxed text-slate-205 overflow-x-auto whitespace-pre-wrap max-h-120 scrollbar-thin">
+                <div className="border-t border-slate-150 bg-slate-950 p-5 font-mono text-[11px] leading-relaxed text-slate-200 overflow-x-auto whitespace-pre-wrap max-h-72 overflow-y-auto scrollbar-thin">
                   {letter.letter_content}
                 </div>
               )}
@@ -216,63 +216,62 @@ const AgentPipelineVisualizer: React.FC<{ trace: any[] }> = ({ trace }) => {
   ];
 
   return (
-    <div className="bg-slate-50/50 rounded-2xl border border-slate-200/80 p-5 shadow-inner mb-6">
-      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-4 text-center">
+    <div className="bg-slate-50/50 rounded-2xl border border-slate-200/80 p-4 shadow-inner mb-6">
+      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-3 text-center">
         Multi-Agent Adjudication Pipeline
       </h4>
       
-      {/* Horizontal workflow row on large screens, grid on small screens */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-2">
-        {steps.map((step, idx) => {
-          const matchingTrace = trace?.find((t) => t.agent_name === step.id);
-          const status = matchingTrace ? matchingTrace.status : 'pending';
-          
-          let statusBg = 'bg-slate-100 border-slate-200 text-slate-400';
-          let statusDot = 'bg-slate-350';
-          
-          if (status === 'success') {
-            statusBg = 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/10';
-            statusDot = 'bg-emerald-500 animate-pulse';
-          } else if (status === 'warning') {
-            statusBg = 'bg-amber-50 border-amber-300 text-amber-700 ring-2 ring-amber-500/10';
-            statusDot = 'bg-amber-500';
-          } else if (status === 'error') {
-            statusBg = 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/10';
-            statusDot = 'bg-rose-500';
-          }
+      {/* Scrollable horizontal workflow row */}
+      <div className="overflow-x-auto pb-1">
+        <div className="flex items-center gap-1 min-w-max">
+          {steps.map((step, idx) => {
+            const matchingTrace = trace?.find((t) => t.agent_name === step.id);
+            const status = matchingTrace ? matchingTrace.status : 'pending';
+            
+            let statusBg = 'bg-slate-100 border-slate-200 text-slate-400';
+            let statusDot = 'bg-slate-400';
+            
+            if (status === 'success') {
+              statusBg = 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-1 ring-emerald-500/20';
+              statusDot = 'bg-emerald-500 animate-pulse';
+            } else if (status === 'warning') {
+              statusBg = 'bg-amber-50 border-amber-300 text-amber-700 ring-1 ring-amber-500/20';
+              statusDot = 'bg-amber-500';
+            } else if (status === 'error') {
+              statusBg = 'bg-rose-50 border-rose-300 text-rose-700 ring-1 ring-rose-500/20';
+              statusDot = 'bg-rose-500';
+            }
 
-          return (
-            <React.Fragment key={step.id}>
-              {/* Connector between nodes */}
-              {idx > 0 && (
-                <div className="hidden md:flex flex-1 h-[2px] bg-slate-200 relative min-w-[12px] max-w-[48px]">
-                  {status !== 'pending' && (
-                    <div className="absolute inset-0 bg-emerald-400/70 animate-pulse rounded-full" />
-                  )}
-                </div>
-              )}
-              {idx > 0 && (
-                <div className="md:hidden text-slate-300 text-xs">▼</div>
-              )}
+            return (
+              <React.Fragment key={step.id}>
+                {/* Connector between nodes */}
+                {idx > 0 && (
+                  <div className="flex items-center flex-shrink-0 w-5 h-[2px] bg-slate-200 relative">
+                    {status !== 'pending' && (
+                      <div className="absolute inset-0 bg-emerald-400/60 rounded-full" />
+                    )}
+                  </div>
+                )}
 
-              {/* Node Card */}
-              <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border shadow-sm w-36 md:w-auto md:flex-1 text-center justify-start md:justify-center transition-all hover:scale-[1.03] duration-200 ${statusBg}`}>
-                <span className="text-sm">{step.icon}</span>
-                <div className="text-left md:text-center min-w-0">
-                  <div className="text-[10px] font-extrabold tracking-tight truncate">
-                    {step.short}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
-                    <span className="text-[8px] font-bold uppercase tracking-wider text-slate-450 truncate">
-                      {status}
-                    </span>
+                {/* Compact Node Card */}
+                <div className={`flex flex-col items-center gap-1 px-2.5 py-2 rounded-lg border shadow-sm flex-shrink-0 transition-all hover:scale-[1.04] duration-200 ${statusBg}`} style={{ minWidth: '70px' }}>
+                  <span className="text-base leading-none">{step.icon}</span>
+                  <div className="text-center">
+                    <div className="text-[9px] font-extrabold tracking-tight whitespace-nowrap">
+                      {step.short}
+                    </div>
+                    <div className="flex items-center justify-center gap-1 mt-0.5">
+                      <span className={`h-1 w-1 rounded-full flex-shrink-0 ${statusDot}`} />
+                      <span className="text-[7px] font-bold uppercase tracking-wider opacity-70 whitespace-nowrap">
+                        {status}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </React.Fragment>
-          );
-        })}
+              </React.Fragment>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

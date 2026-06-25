@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 
 export const Header: React.FC = () => {
   return (
@@ -36,17 +36,29 @@ export const Header: React.FC = () => {
           </Link>
         </div>
 
-        {/* Global Navigation Link Placeholders */}
+        {/* Global Navigation Links */}
         <nav className="hidden md:flex items-center gap-6">
-          <Link
+          <NavLink
             to="/"
-            className="text-sm font-semibold text-blue-600 transition-colors"
+            end
+            className={({ isActive }) =>
+              `text-sm font-semibold transition-colors ${
+                isActive ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'
+              }`
+            }
           >
             Dashboard
-          </Link>
-          <span className="text-sm font-medium text-slate-400 cursor-not-allowed">
+          </NavLink>
+          <NavLink
+            to="/intake"
+            className={({ isActive }) =>
+              `text-sm font-semibold transition-colors ${
+                isActive ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'
+              }`
+            }
+          >
             Intake
-          </span>
+          </NavLink>
           <span className="text-sm font-medium text-slate-400 cursor-not-allowed">
             COB Analysis
           </span>

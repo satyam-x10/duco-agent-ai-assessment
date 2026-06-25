@@ -4,8 +4,7 @@ import { PageContainer } from '../../components/layout/PageContainer';
 import { FileUploader } from '../../components/intake/FileUploader';
 import { RequirementSlotCard } from '../../components/intake/RequirementSlotCard';
 import type { RequirementSlot, RequirementSlotId, UploadedFile } from '../../types/intake';
-
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+import { ApiService } from '../../services/api';
 
 export const IntakePage: React.FC = () => {
     // Predefined requirement slots
@@ -54,29 +53,7 @@ export const IntakePage: React.FC = () => {
     useEffect(() => {
         const fetchIntakeStatus = async () => {
             try {
-                const res = await axios.get(`${API_BASE_URL}/intake/status`);
-                const backendStatus = res.data.status;
-                const syncedFiles: Record<RequirementSlotId, UploadedFile | undefined> = {
-                    priya_pt_invoice: undefined,
-                    aarav_mri_report: undefined,
-                    surgeon_estimate: undefined,
-                    user_query_transcript: undefined,
-                };
-                
-                Object.keys(syncedFiles).forEach((id) => {
-                    const slotId = id as RequirementSlotId;
-                    const meta = backendStatus[slotId];
-                    if (meta) {
-                        syncedFiles[slotId] = {
-                            name: meta.filename,
-                            size: meta.size_bytes,
-                            type: meta.content_type || 'application/octet-stream',
-                            status: 'ready',
-                            slotId,
-                        };
-                    }
-                });
-                
+                const syncedFiles = await ApiService.fetchIntakeStatus();
                 setUploadedFiles(syncedFiles);
             } catch (err) {
                 console.warn('Could not sync files from backend on mount. Using local storage state.', err);
@@ -86,44 +63,49 @@ export const IntakePage: React.FC = () => {
     }, []);
 
     const handleUpload = async (file: File, slotId: RequirementSlotId) => {
-        // Set local state optimistically first
+        // Set local state to uploading first
         setUploadedFiles((prev) => ({
             ...prev,
             [slotId]: {
                 name: file.name,
                 size: file.size,
                 type: file.type,
-                status: 'ready',
+                status: 'uploading',
                 slotId,
             },
         }));
 
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('document_type', slotId);
-
-            const res = await axios.post(`${API_BASE_URL}/intake/upload`, formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
-            });
+            const uploadedFile = await ApiService.uploadDocument(file, slotId);
+            setUploadedFiles((prev) => ({
+                ...prev,
+                [slotId]: uploadedFile,
+            }));
+        } catch (err: any) {
+            let errorMsg = 'Upload failed. Please check network connection.';
             
-            const { metadata } = res.data;
-            if (metadata) {
-                setUploadedFiles((prev) => ({
-                    ...prev,
-                    [slotId]: {
-                        name: metadata.filename,
-                        size: metadata.size_bytes,
-                        type: metadata.content_type || file.type,
-                        status: 'ready',
-                        slotId,
-                    },
-                }));
+            if (axios.isAxiosError(err)) {
+                if (err.response) {
+                    // Extract validation error message from starlette/fastapi error schema
+                    errorMsg = err.response.data?.detail || `Server returned error status ${err.response.status}`;
+                } else if (err.request) {
+                    errorMsg = 'No response received from the backend server.';
+                }
             }
-        } catch (err) {
-            console.warn(`Backend upload failed for ${slotId}. Retaining client-side simulation file.`, err);
+            
+            console.warn(`Backend upload failed for ${slotId}: ${errorMsg}`, err);
+
+            setUploadedFiles((prev) => ({
+                ...prev,
+                [slotId]: {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    status: 'error',
+                    slotId,
+                    errorMsg,
+                },
+            }));
         }
     };
 
@@ -135,7 +117,7 @@ export const IntakePage: React.FC = () => {
         }));
 
         try {
-            await axios.delete(`${API_BASE_URL}/intake/${slotId}`);
+            await ApiService.deleteDocument(slotId);
         } catch (err) {
             console.warn(`Backend deletion failed for slot ${slotId}.`, err);
         }
@@ -192,15 +174,13 @@ export const IntakePage: React.FC = () => {
 
         try {
             // 1. Post to start analysis
-            const startRes = await axios.post(`${API_BASE_URL}/analysis/start`);
-            const { job_id } = startRes.data;
+            const { job_id } = await ApiService.startAnalysis();
             setAnalysisStatus('processing');
 
             // 2. Poll job status
             const interval = setInterval(async () => {
                 try {
-                    const statusRes = await axios.get(`${API_BASE_URL}/analysis/status/${job_id}`);
-                    const { status: jobStatus, progress_percent, message } = statusRes.data;
+                    const { status: jobStatus, progress_percent, message } = await ApiService.getAnalysisStatus(job_id);
 
                     setProgress(progress_percent);
                     setPhaseMessage(message);
@@ -208,8 +188,8 @@ export const IntakePage: React.FC = () => {
                     if (jobStatus === 'completed') {
                         clearInterval(interval);
                         // Fetch reports summary
-                        const reportRes = await axios.get(`${API_BASE_URL}/reports/summary?job_id=${job_id}`);
-                        setReport(reportRes.data);
+                        const reportRes = await ApiService.getReportsSummary(job_id);
+                        setReport(reportRes);
                         setAnalysisStatus('completed');
                     } else if (jobStatus === 'failed') {
                         clearInterval(interval);
@@ -233,7 +213,7 @@ export const IntakePage: React.FC = () => {
         for (const slotId of slotsToClear) {
             if (uploadedFiles[slotId]) {
                 try {
-                    await axios.delete(`${API_BASE_URL}/intake/${slotId}`);
+                    await ApiService.deleteDocument(slotId);
                 } catch (err) {
                     console.warn(`Failed to clean backend storage slot ${slotId} on reset.`, err);
                 }
@@ -253,10 +233,10 @@ export const IntakePage: React.FC = () => {
     };
 
     // Compute metrics
-    const activeFiles = Object.values(uploadedFiles).filter(Boolean) as UploadedFile[];
-    const occupiedSlotIds = activeFiles.map((f) => f.slotId);
-    const isWorkspaceEmpty = activeFiles.length === 0;
-    const isAllUploaded = activeFiles.length === requirementSlots.length;
+    const activeFiles = Object.values(uploadedFiles).filter((f) => f && f.status === 'ready') as UploadedFile[];
+    const occupiedSlotIds = (Object.values(uploadedFiles).filter((f) => f && (f.status === 'ready' || f.status === 'uploading')) as UploadedFile[]).map((f) => f.slotId);
+    const isWorkspaceEmpty = Object.values(uploadedFiles).filter(Boolean).length === 0;
+    const isAllUploaded = requirementSlots.every((slot) => uploadedFiles[slot.id]?.status === 'ready');
 
     // Render Loading / Progress state
     if (analysisStatus === 'starting' || analysisStatus === 'processing') {

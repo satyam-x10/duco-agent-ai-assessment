@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/layout/PageContainer';
 import { FileUploader } from '../../components/intake/FileUploader';
 import { RequirementSlotCard } from '../../components/intake/RequirementSlotCard';
@@ -7,6 +8,7 @@ import type { RequirementSlot, RequirementSlotId, UploadedFile } from '../../typ
 import { ApiService } from '../../services/api';
 
 export const IntakePage: React.FC = () => {
+    const navigate = useNavigate();
     // Predefined requirement slots
     const requirementSlots: RequirementSlot[] = [
         {
@@ -47,7 +49,6 @@ export const IntakePage: React.FC = () => {
     const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'completed' | 'failed'>('idle');
     const [progress, setProgress] = useState(0);
     const [phaseMessage, setPhaseMessage] = useState('');
-    const [report, setReport] = useState<any>(null);
 
     // Fetch existing files from backend storage on mount
     useEffect(() => {
@@ -140,28 +141,9 @@ export const IntakePage: React.FC = () => {
                 setTimeout(() => {
                     setProgress(100);
                     setPhaseMessage('Pre-authorization documents drafted. Analysis completed.');
-                    setReport({
-                        job_id: 'fallback-job-id',
-                        patient_name: 'Priya Patel',
-                        financial_summary: {
-                            total_billed: 1250.00,
-                            primary_paid: 800.00,
-                            secondary_paid: 300.00,
-                            patient_responsibility: 150.00,
-                            currency: 'USD'
-                        },
-                        preauth_letters: [
-                            { insurer_name: 'BlueShield Cross', generated_at: new Date().toISOString(), download_url: '#', status: 'generated' },
-                            { insurer_name: 'UnitedHealth', generated_at: new Date().toISOString(), download_url: '#', status: 'generated' }
-                        ],
-                        audio_summary: {
-                            duration_seconds: 78.5,
-                            generated_at: new Date().toISOString(),
-                            download_url: '#'
-                        },
-                        completed_at: new Date().toISOString()
-                    });
-                    setAnalysisStatus('completed');
+                    setTimeout(() => {
+                        navigate('/results?job_id=fallback-job-id');
+                    }, 500);
                 }, 1200);
             }, 1200);
         }, 1200);
@@ -187,10 +169,9 @@ export const IntakePage: React.FC = () => {
 
                     if (jobStatus === 'completed') {
                         clearInterval(interval);
-                        // Fetch reports summary
-                        const reportRes = await ApiService.getReportsSummary(job_id);
-                        setReport(reportRes);
-                        setAnalysisStatus('completed');
+                        setTimeout(() => {
+                            navigate(`/results?job_id=${job_id}`);
+                        }, 500);
                     } else if (jobStatus === 'failed') {
                         clearInterval(interval);
                         setAnalysisStatus('failed');
@@ -229,7 +210,6 @@ export const IntakePage: React.FC = () => {
         setAnalysisStatus('idle');
         setProgress(0);
         setPhaseMessage('');
-        setReport(null);
     };
 
     // Compute metrics
@@ -276,117 +256,6 @@ export const IntakePage: React.FC = () => {
         );
     }
 
-    // Render Completed / Results state
-    if (analysisStatus === 'completed' && report) {
-        return (
-            <PageContainer className="max-w-3xl py-8">
-                <div className="border-b border-slate-200 pb-5 mb-8">
-                    <h1 className="text-2xl font-bold tracking-tight text-slate-900">Benefits Coordination Report</h1>
-                    <p className="text-sm text-slate-550 mt-1">
-                        Resolved benefit coordination calculations and insurer pre-authorization letters for patient: <strong className="text-slate-800">{report.patient_name}</strong>
-                    </p>
-                </div>
-
-                <div className="space-y-6">
-                    {/* Financial Summary Card */}
-                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Financial Allocation Breakdown</h2>
-
-                        <div className="grid gap-4 sm:grid-cols-4">
-                            <div className="rounded-lg bg-slate-50 p-4">
-                                <span className="text-[10px] font-bold uppercase text-slate-400">Total Billed</span>
-                                <p className="text-xl font-extrabold text-slate-900 mt-1">
-                                    ${report.financial_summary.total_billed.toFixed(2)}
-                                </p>
-                            </div>
-                            <div className="rounded-lg bg-blue-50/50 p-4">
-                                <span className="text-[10px] font-bold uppercase text-blue-600">Primary Insurer Paid</span>
-                                <p className="text-xl font-extrabold text-blue-700 mt-1">
-                                    ${report.financial_summary.primary_paid.toFixed(2)}
-                                </p>
-                            </div>
-                            <div className="rounded-lg bg-indigo-50/50 p-4">
-                                <span className="text-[10px] font-bold uppercase text-indigo-600">Secondary Insurer Paid</span>
-                                <p className="text-xl font-extrabold text-indigo-700 mt-1">
-                                    ${report.financial_summary.secondary_paid.toFixed(2)}
-                                </p>
-                            </div>
-                            <div className="rounded-lg bg-amber-50 p-4 border border-amber-100">
-                                <span className="text-[10px] font-bold uppercase text-amber-700">Patient Responsibility</span>
-                                <p className="text-xl font-extrabold text-amber-850 mt-1">
-                                    ${report.financial_summary.patient_responsibility.toFixed(2)}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Documents & Audio Section */}
-                    <div className="grid gap-6 md:grid-cols-2">
-                        {/* Pre-auth Letters Card */}
-                        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col justify-between">
-                            <div>
-                                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Drafted Pre-Auth Letters</h2>
-                                <div className="space-y-3">
-                                    {report.preauth_letters.map((letter: any, idx: number) => (
-                                        <div key={idx} className="flex items-center justify-between rounded-lg border border-slate-100 p-3 bg-slate-50/30">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-bold text-slate-800">{letter.insurer_name}</span>
-                                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-650/10">
-                                                    Drafted
-                                                </span>
-                                            </div>
-                                            <a
-                                                href={letter.download_url}
-                                                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                                                onClick={(e) => e.preventDefault()}
-                                            >
-                                                Download PDF
-                                            </a>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Audio Summary Card */}
-                        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col justify-between">
-                            <div>
-                                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Audio Briefing Summary</h2>
-                                <div className="rounded-lg border border-slate-100 p-4 bg-slate-50/30 text-center">
-                                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600 mb-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" />
-                                        </svg>
-                                    </div>
-                                    <span className="text-xs font-bold text-slate-800 font-sans">TTS Audio Briefing</span>
-                                    <p className="text-[10px] text-slate-400 mt-1">Duration: {report.audio_summary.duration_seconds}s</p>
-
-                                    <button
-                                        type="button"
-                                        className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-                                    >
-                                        Play Audio Briefing
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="pt-4 flex justify-end">
-                        <button
-                            onClick={resetWorkspace}
-                            type="button"
-                            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
-                        >
-                            Clear Workspace & Reset
-                        </button>
-                    </div>
-                </div>
-            </PageContainer>
-        );
-    }
-
     // Render default Workspace
     return (
         <PageContainer className="max-w-6xl">
@@ -426,9 +295,20 @@ export const IntakePage: React.FC = () => {
                         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
                             Required Documents List
                         </h2>
-                        <span className="text-xs font-semibold text-slate-400">
-                            {activeFiles.length} of {requirementSlots.length} Satisfied
-                        </span>
+                        <div className="flex items-center gap-3">
+                            {!isWorkspaceEmpty && (
+                                <button
+                                    onClick={resetWorkspace}
+                                    type="button"
+                                    className="text-xs font-bold text-rose-600 hover:text-rose-700 transition-colors cursor-pointer"
+                                >
+                                    Clear All
+                                </button>
+                            )}
+                            <span className="text-xs font-semibold text-slate-400">
+                                {activeFiles.length} of {requirementSlots.length} Satisfied
+                            </span>
+                        </div>
                     </div>
 
                     {/* Empty Workspace Notification */}

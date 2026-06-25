@@ -59,12 +59,16 @@ export const Header: React.FC = () => {
           >
             Intake
           </NavLink>
-          <span className="text-sm font-medium text-slate-400 cursor-not-allowed">
-            COB Analysis
-          </span>
-          <span className="text-sm font-medium text-slate-400 cursor-not-allowed">
-            Pre-Auth Letters
-          </span>
+          <NavLink
+            to="/results"
+            className={({ isActive }) =>
+              `text-sm font-semibold transition-colors ${
+                isActive ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'
+              }`
+            }
+          >
+            COB Results
+          </NavLink>
         </nav>
 
         {/* System Status Indicators */}

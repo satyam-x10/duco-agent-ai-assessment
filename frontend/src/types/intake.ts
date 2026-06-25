@@ -15,6 +15,7 @@ export interface UploadedFile {
   name: string;
   size: number;
   type: string;
-  status: 'ready' | 'error';
+  status: 'ready' | 'uploading' | 'error';
   slotId: RequirementSlotId;
+  errorMsg?: string;
 }

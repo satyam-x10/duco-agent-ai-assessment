@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
+from services.storage import StorageError, StorageValidationError, StorageNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,39 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "detail": "Request validation failed",
                 "errors": exc.errors(),
                 "error_code": "VALIDATION_ERROR"
+            },
+        )
+
+    @app.exception_handler(StorageValidationError)
+    async def storage_validation_handler(request: Request, exc: StorageValidationError) -> JSONResponse:
+        logger.warning(f"Storage validation failed on {request.url.path}: {exc}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "detail": str(exc),
+                "error_code": "STORAGE_VALIDATION_ERROR"
+            },
+        )
+
+    @app.exception_handler(StorageNotFoundError)
+    async def storage_not_found_handler(request: Request, exc: StorageNotFoundError) -> JSONResponse:
+        logger.warning(f"Storage resource not found on {request.url.path}: {exc}")
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "detail": str(exc),
+                "error_code": "STORAGE_NOT_FOUND_ERROR"
+            },
+        )
+
+    @app.exception_handler(StorageError)
+    async def storage_general_handler(request: Request, exc: StorageError) -> JSONResponse:
+        logger.error(f"Storage system error on {request.url.path}: {exc}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": "Storage service error occurred.",
+                "error_code": "STORAGE_SYSTEM_ERROR"
             },
         )
 

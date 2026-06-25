@@ -25,6 +25,10 @@ htmlcov/
 backend/outputs/*
 !backend/outputs/.gitkeep
 
+# Uploaded files
+backend/uploads/*
+!backend/uploads/.gitkeep
+
 # Environment and sensitive keys
 .env
 .env.*

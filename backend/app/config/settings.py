@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     API_V1_STR: str = "/api/v1"
     
+    # Storage Configuration
+    MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB
+    UPLOAD_DIR: str = "uploads"
+    STORAGE_TYPE: str = "local"  # 'local' or 'gcs'
+    
     # CORS Origins configuration, can be a list or a comma-separated string
     CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",

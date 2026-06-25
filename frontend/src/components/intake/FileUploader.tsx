@@ -15,8 +15,23 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   const [selectedSlotId, setSelectedSlotId] = useState<RequirementSlotId | ''>('');
   const [isDragActive, setIsDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Auto-advance/select the next unoccupied slot
   useEffect(() => {
@@ -120,6 +135,43 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
     }
   };
 
+  // Color styling configuration for each slot type to look progressive and distinct
+  const slotStyles = {
+    priya_pt_invoice: {
+      selectBg: 'bg-blue-50/50 border-blue-200 text-blue-900 focus:ring-blue-500 focus:border-blue-500',
+      dropBg: 'border-blue-300 bg-blue-50/20 text-blue-900 hover:bg-blue-50/40',
+      iconColor: 'bg-blue-100 text-blue-600',
+    },
+    aarav_mri_report: {
+      selectBg: 'bg-indigo-50/50 border-indigo-200 text-indigo-900 focus:ring-indigo-500 focus:border-indigo-500',
+      dropBg: 'border-indigo-300 bg-indigo-50/20 text-indigo-900 hover:bg-indigo-50/40',
+      iconColor: 'bg-indigo-100 text-indigo-600',
+    },
+    surgeon_estimate: {
+      selectBg: 'bg-emerald-50/50 border-emerald-200 text-emerald-900 focus:ring-emerald-500 focus:border-emerald-500',
+      dropBg: 'border-emerald-300 bg-emerald-50/20 text-emerald-900 hover:bg-emerald-50/40',
+      iconColor: 'bg-emerald-100 text-emerald-600',
+    },
+    user_query_transcript: {
+      selectBg: 'bg-amber-50/50 border-amber-200 text-amber-900 focus:ring-amber-500 focus:border-amber-500',
+      dropBg: 'border-amber-300 bg-amber-50/20 text-amber-900 hover:bg-amber-50/40',
+      iconColor: 'bg-amber-100 text-amber-600',
+    },
+  };
+
+  const getSlotColors = (slotId: RequirementSlotId | '') => {
+    if (slotId && slotStyles[slotId]) {
+      return slotStyles[slotId];
+    }
+    return {
+      selectBg: 'bg-white border-slate-200 text-slate-800 focus:ring-blue-500 focus:border-blue-500',
+      dropBg: 'border-slate-250 bg-slate-50 hover:bg-slate-100/50',
+      iconColor: 'bg-slate-100 text-slate-400',
+    };
+  };
+
+  const colors = getSlotColors(selectedSlotId);
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-4">
@@ -127,29 +179,61 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
       </h2>
 
       {/* Target Slot Selector */}
-      <div className="mb-4">
-        <label htmlFor="slot-select" className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+      <div className="mb-4 relative" ref={dropdownRef}>
+        <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
           1. Select Requirement Target
         </label>
-        <select
-          id="slot-select"
-          value={selectedSlotId}
-          onChange={(e) => {
-            setSelectedSlotId(e.target.value as RequirementSlotId);
-            setError(null);
-          }}
-          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none"
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className={`w-full flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold focus:outline-none transition-all duration-300 cursor-pointer ${colors.selectBg}`}
         >
-          <option value="">-- Choose target slot --</option>
-          {slots.map((s) => {
-            const isFilled = occupiedSlots.includes(s.id);
-            return (
-              <option key={s.id} value={s.id} disabled={isFilled}>
-                {s.title} {isFilled ? '(Occupied)' : ''}
-              </option>
-            );
-          })}
-        </select>
+          <span>{currentSlot ? currentSlot.title : '-- Choose target slot --'}</span>
+          <svg
+            className={`h-4 w-4 text-slate-550 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+
+        {isOpen && (
+          <div className="absolute z-50 mt-1.5 w-full rounded-lg border border-slate-200 bg-white py-1 shadow-lg overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
+            {slots.map((s) => {
+              const isFilled = occupiedSlots.includes(s.id);
+              let optionStyle = 'bg-white text-slate-800 hover:bg-slate-50';
+              if (s.id === 'priya_pt_invoice') optionStyle = 'bg-blue-50/30 text-blue-900 hover:bg-blue-50/60';
+              if (s.id === 'aarav_mri_report') optionStyle = 'bg-indigo-50/30 text-indigo-900 hover:bg-indigo-50/60';
+              if (s.id === 'surgeon_estimate') optionStyle = 'bg-emerald-50/30 text-emerald-900 hover:bg-emerald-50/60';
+              if (s.id === 'user_query_transcript') optionStyle = 'bg-amber-50/30 text-amber-900 hover:bg-amber-50/60';
+
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={isFilled}
+                  onClick={() => {
+                    setSelectedSlotId(s.id);
+                    setError(null);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 text-sm font-semibold transition-colors flex items-center justify-between ${optionStyle} ${
+                    isFilled ? 'opacity-40 cursor-not-allowed bg-slate-50 text-slate-400' : 'cursor-pointer'
+                  }`}
+                >
+                  <span>{s.title}</span>
+                  {isFilled && (
+                    <span className="inline-flex items-center rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-650">
+                      Occupied
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Drag & Drop Zone */}
@@ -162,10 +246,10 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           onDragOver={handleDrag}
           onDragLeave={handleDrag}
           onDrop={handleDrop}
-          className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition-all ${
+          className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition-all duration-300 ${
             isDragActive
               ? 'border-blue-500 bg-blue-50/10'
-              : 'border-slate-250 bg-slate-50 hover:bg-slate-100/50'
+              : colors.dropBg
           } ${!selectedSlotId ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
           onClick={() => selectedSlotId && triggerBrowse()}
         >
@@ -178,10 +262,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             className="hidden"
           />
 
-          {/* Upload Icon SVG */}
-          <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
-            selectedSlotId ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'
-          }`}>
+          {/* Dynamic Icon Wrapper */}
+          <div className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors duration-300 ${colors.iconColor}`}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -198,7 +280,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             </svg>
           </div>
 
-          <p className="mt-4 text-xs font-semibold text-slate-700">
+          <p className="mt-4 text-xs font-semibold">
             {selectedSlotId
               ? 'Drag & drop your file here, or click to browse'
               : 'Select a requirement target above to unlock upload zone'}

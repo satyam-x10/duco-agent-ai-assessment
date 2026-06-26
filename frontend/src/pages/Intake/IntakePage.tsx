@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/layout/PageContainer';
@@ -163,6 +163,8 @@ export const IntakePage: React.FC = () => {
     const [progress, setProgress] = useState(0);
     const [phaseMessage, setPhaseMessage] = useState('');
     const [isDemoLoading, setIsDemoLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [failedAgent, setFailedAgent] = useState<string | null>(null);
 
     // Fetch existing files from backend storage on mount
     useEffect(() => {
@@ -238,30 +240,7 @@ export const IntakePage: React.FC = () => {
         }
     };
 
-    // Run a high-fidelity client-side progress simulation as a robust fallback
-    const runFallbackSimulation = () => {
-        setAnalysisStatus('processing');
-        setProgress(15);
-        setPhaseMessage('Initializing specialist agents...');
 
-        setTimeout(() => {
-            setProgress(45);
-            setPhaseMessage('COB Agent resolving rules for primary/secondary insurance...');
-
-            setTimeout(() => {
-                setProgress(75);
-                setPhaseMessage('Finance Agent calculating out-of-pocket costs...');
-
-                setTimeout(() => {
-                    setProgress(100);
-                    setPhaseMessage('Pre-authorization documents drafted. Analysis completed.');
-                    setTimeout(() => {
-                        navigate('/results?job_id=fallback-job-id');
-                    }, 500);
-                }, 1200);
-            }, 1200);
-        }, 1200);
-    };
 
     const startAssessment = async () => {
         setAnalysisStatus('starting');
@@ -276,7 +255,7 @@ export const IntakePage: React.FC = () => {
             // 2. Poll job status
             const interval = setInterval(async () => {
                 try {
-                    const { status: jobStatus, progress_percent, message } = await ApiService.getAnalysisStatus(job_id);
+                    const { status: jobStatus, progress_percent, message, error_details } = await ApiService.getAnalysisStatus(job_id);
 
                     setProgress(progress_percent);
                     setPhaseMessage(message);
@@ -289,16 +268,20 @@ export const IntakePage: React.FC = () => {
                     } else if (jobStatus === 'failed') {
                         clearInterval(interval);
                         setAnalysisStatus('failed');
+                        setErrorMessage(message || error_details || 'Pipeline failed. Check backend logs for details.');
                     }
-                } catch (pollErr) {
+                } catch (pollErr: any) {
                     clearInterval(interval);
-                    console.warn('Polling check failed. Switching to fallback simulation...', pollErr);
-                    runFallbackSimulation();
+                    console.error('Polling check failed:', pollErr);
+                    setAnalysisStatus('failed');
+                    setErrorMessage('Lost connection to backend while polling analysis status. Please retry.');
                 }
             }, 1200);
-        } catch (err) {
-            console.warn('Backend server not responding. Running client-side benefit simulation fallback...', err);
-            runFallbackSimulation();
+        } catch (err: any) {
+            console.error('Backend server not responding:', err);
+            setAnalysisStatus('failed');
+            const detail = err?.response?.data?.detail;
+            setErrorMessage(typeof detail === 'string' ? detail : 'Backend server is not responding. Ensure the server is running on port 8000.');
         }
     };
 
@@ -377,6 +360,50 @@ export const IntakePage: React.FC = () => {
     const occupiedSlotIds = (Object.values(uploadedFiles).filter((f) => f && (f.status === 'ready' || f.status === 'uploading')) as UploadedFile[]).map((f) => f.slotId);
     const isWorkspaceEmpty = Object.values(uploadedFiles).filter(Boolean).length === 0;
     const isAllUploaded = requirementSlots.every((slot) => uploadedFiles[slot.id]?.status === 'ready');
+
+    // Render failed state
+    if (analysisStatus === 'failed') {
+        return (
+            <PageContainer className="max-w-xl py-16">
+                <div className="rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-md">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-8 w-8">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                        </svg>
+                    </div>
+
+                    <h2 className="mt-6 text-xl font-bold text-slate-900">Pipeline Failed</h2>
+                    <p className="mt-1.5 text-xs text-slate-400 font-semibold tracking-wide uppercase">Multi-Agent Orchestration Error</p>
+
+                    {failedAgent && (
+                        <div className="mt-4 inline-flex items-center rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 ring-1 ring-inset ring-rose-600/10">
+                            Failed at: {failedAgent}
+                        </div>
+                    )}
+
+                    <p className="mt-4 text-sm font-medium text-rose-700 bg-rose-50 border border-rose-100 rounded-xl py-3.5 px-5">
+                        {errorMessage || 'An unknown error occurred during pipeline execution.'}
+                    </p>
+
+                    <div className="mt-6 flex justify-center gap-3">
+                        <button
+                            onClick={() => {
+                                setAnalysisStatus('idle');
+                                setProgress(0);
+                                setPhaseMessage('');
+                                setErrorMessage(null);
+                                setFailedAgent(null);
+                            }}
+                            type="button"
+                            className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
+                        >
+                            Retry Assessment
+                        </button>
+                    </div>
+                </div>
+            </PageContainer>
+        );
+    }
 
     // Render Loading / Progress state
     if (analysisStatus === 'starting' || analysisStatus === 'processing') {

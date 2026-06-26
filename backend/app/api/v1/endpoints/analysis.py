@@ -1,4 +1,6 @@
+import asyncio
 import uuid
+import logging
 from datetime import datetime
 from fastapi import APIRouter, status, HTTPException
 from app.schemas.analysis import (
@@ -9,97 +11,143 @@ from app.schemas.analysis import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# In-memory database holding analysis jobs status
-mock_jobs_db = {}
+# In-memory job store. Maps job_id -> job record dict.
+# Keys: job_id, status, progress_percent, message, created_at, completed_at, error_details, state
+jobs_db: dict = {}
 
 
 @router.post("/start", response_model=AnalysisStartResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_analysis(payload: AnalysisStartRequest = None):
     """
-    Triggers the multi-agent benefit assessment and COB rules calculations.
-    Returns a Job ID to query progress in the background.
+    Triggers the real multi-agent benefit assessment pipeline.
+    The orchestrator runs as a background task. Returns a job_id for polling.
     """
     job_id = str(uuid.uuid4())
-    mock_jobs_db[job_id] = {
+    now = datetime.utcnow()
+
+    jobs_db[job_id] = {
         "job_id": job_id,
         "status": JobStatus.PROCESSING,
-        "progress_percent": 15,
-        "message": "Intake Agent validation completed. Initializing specialist agents...",
-        "created_at": datetime.utcnow(),
+        "progress_percent": 5,
+        "message": "Initializing specialist agents. Pipeline starting...",
+        "created_at": now,
         "completed_at": None,
         "error_details": None,
+        "state": None,
     }
-    
+
+    # Launch the orchestration pipeline as a background task
+    asyncio.create_task(_run_orchestration(job_id))
+
     return AnalysisStartResponse(
         job_id=job_id,
         status=JobStatus.PENDING,
-        created_at=datetime.utcnow(),
-        message="Coordination of Benefits job has been queued successfully."
+        created_at=now,
+        message="Coordination of Benefits job has been queued and the pipeline is starting."
     )
 
 
 @router.get("/status/{jobId}", response_model=AnalysisStatusResponse)
 async def get_analysis_status(jobId: str):
     """
-    Queries progress status of an active benefit assessment run.
-    Simulates incremental task advances on consecutive status polls.
+    Returns the real-time progress of a running or completed analysis job.
+    Progress advances as each agent completes — no artificial simulation.
     """
-    if jobId not in mock_jobs_db:
-        # Check if they passed a static placeholder (for mock frontend tests)
-        if jobId == "mock-job-id":
-            return AnalysisStatusResponse(
-                job_id="mock-job-id",
-                status=JobStatus.COMPLETED,
-                progress_percent=100,
-                message="Analysis finished. Reports generated successfully.",
-                created_at=datetime.utcnow(),
-                completed_at=datetime.utcnow()
-            )
-            
+    if jobId not in jobs_db:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Analysis job with ID '{jobId}' was not found."
         )
-        
-    job = mock_jobs_db[jobId]
-    
-    # Increment progress on each request to simulate agent activity in real-time
-    if job["status"] == JobStatus.PROCESSING:
-        if job["progress_percent"] < 90:
-            job["progress_percent"] += 25
-            if 40 <= job["progress_percent"] < 65:
-                job["message"] = "COB Agent resolving rules for primary/secondary insurance..."
-            elif job["progress_percent"] >= 65:
-                job["message"] = "Finance Agent calculating out-of-pocket costs..."
-        else:
-            job["progress_percent"] = 100
-            job["status"] = JobStatus.COMPLETED
-            job["message"] = "Pre-authorization documents drafted. Analysis completed."
-            job["completed_at"] = datetime.utcnow()
-            
-            # Execute orchestrator pipeline on uploaded files
-            try:
-                from app.dependencies.orchestration import get_orchestrator
-                from app.dependencies.storage import get_storage_service
-                from app.core.adk import SharedWorkflowState
-                
-                storage_service = get_storage_service()
-                status_map = await storage_service.get_status()
-                
-                # Check patient target based on MRI vs PT
-                patient_name = "Priya Sen"
-                member_id = "98765"
-                if status_map.get("aarav_mri_report"):
-                    patient_name = "Aarav Sen"
-                    member_id = "54321"
-                    
-                state = SharedWorkflowState(claim_id=f"CLAIM-{jobId[:8].upper()}", member_id=member_id)
-                orchestrator = get_orchestrator()
-                await orchestrator.execute(state, max_retries=1)
-                job["state"] = state
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).error(f"Failed to run orchestrator on job completion: {e}", exc_info=True)
-            
-    return AnalysisStatusResponse(**job)
+
+    job = jobs_db[jobId]
+    return AnalysisStatusResponse(
+        job_id=job["job_id"],
+        status=job["status"],
+        progress_percent=job["progress_percent"],
+        message=job["message"],
+        created_at=job["created_at"],
+        completed_at=job.get("completed_at"),
+        error_details=job.get("error_details"),
+    )
+
+
+async def _run_orchestration(job_id: str) -> None:
+    """
+    Background task that runs the full multi-agent orchestration pipeline.
+    Updates jobs_db[job_id] in real-time as agents complete.
+    Progress milestones match each agent's completion.
+    """
+    from app.dependencies.orchestration import get_orchestrator
+    from app.dependencies.storage import get_storage_service
+    from app.core.adk import SharedWorkflowState
+
+    job = jobs_db.get(job_id)
+    if not job:
+        return
+
+    phase_messages = {
+        "IntakeAgent": "IntakeAgent: Validated documents in storage slots.",
+        "DocIntelAgent": "DocIntelAgent: Extracted text from all uploaded documents.",
+        "MedicalCodingAgent": "MedicalCodingAgent: Gemini inferred ICD-10 and CPT codes.",
+        "InsuranceAgent": "InsuranceAgent: Resolved insurance policies for patient.",
+        "COBAgent": "COBAgent: Coordinated benefits across primary and secondary plans.",
+        "FinanceAgent": "FinanceAgent: Generated audited financial breakdown report.",
+        "ReviewerAgent": "ReviewerAgent: Validated pipeline outputs and generated quality checks.",
+    }
+
+    async def on_agent_complete(agent_name: str, progress: int) -> None:
+        """Callback invoked after each agent succeeds — updates job progress in real-time."""
+        job["progress_percent"] = progress
+        job["message"] = phase_messages.get(agent_name, f"{agent_name} completed.")
+        logger.info(f"[Job {job_id}] {agent_name} complete → {progress}%")
+
+    try:
+        # Determine which member to use based on uploaded documents
+        storage_service = get_storage_service()
+        status_map = await storage_service.get_status()
+
+        # Default to Priya Sen (BlueShield subscriber: 98765).
+        # Her member ID exists in policy_blueshield.json and the InsuranceAgent
+        # resolves cross-plan coverage by name match across all loaded policies.
+        member_id = "98765"
+
+        claim_id = f"CLAIM-{job_id[:8].upper()}"
+        state = SharedWorkflowState(claim_id=claim_id, member_id=member_id)
+
+        orchestrator = get_orchestrator()
+        orchestrator.set_progress_callback(on_agent_complete)
+
+        await orchestrator.execute(state, max_retries=1)
+
+        # Success — store state for reports endpoint
+        job["status"] = JobStatus.COMPLETED
+        job["progress_percent"] = 100
+        job["message"] = "Pipeline completed successfully. Pre-authorization letters and reports are ready."
+        job["completed_at"] = datetime.utcnow()
+        job["state"] = state
+        logger.info(f"[Job {job_id}] Orchestration completed successfully.")
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"[Job {job_id}] Orchestration failed: {error_msg}", exc_info=True)
+
+        # Retrieve failed_agent from state if available
+        failed_agent = "Unknown"
+        failure_reason = error_msg
+        try:
+            if state and state.failed_agent:
+                failed_agent = state.failed_agent
+            if state and state.failure_reason:
+                failure_reason = state.failure_reason
+        except Exception:
+            pass
+
+        job["status"] = JobStatus.FAILED
+        job["progress_percent"] = job.get("progress_percent", 0)
+        job["message"] = f"Pipeline failed at {failed_agent}: {failure_reason}"
+        job["completed_at"] = datetime.utcnow()
+        job["error_details"] = failure_reason
+        job["failed_agent"] = failed_agent
+        job["state"] = state if "state" in dir() else None

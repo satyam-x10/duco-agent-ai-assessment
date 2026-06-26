@@ -280,22 +280,42 @@ const AgentPipelineVisualizer: React.FC<{ trace: any[] }> = ({ trace }) => {
 // Main ResultsPage Component
 export const ResultsPage: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const jobId = searchParams.get('job_id') || 'mock-job-id';
+  const jobId = searchParams.get('job_id');
 
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [failedStep, setFailedStep] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchReport = async () => {
+      if (!jobId) {
+        setError('No job ID provided. Please run an analysis first from the Intake Workspace.');
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
+      setFailedStep(null);
       try {
         const data = await ApiService.getReportsSummary(jobId);
         setReport(data);
       } catch (err: any) {
         console.error('Failed to load reports summary:', err);
-        setError('Could not retrieve benefits report summary. Please verify that intake processing has been run.');
+        // Extract structured error from 424 response
+        const detail = err?.response?.data?.detail;
+        if (detail && typeof detail === 'object') {
+          setFailedStep(detail.step || null);
+          setError(detail.message || 'Pipeline failed with an unknown error.');
+        } else if (typeof detail === 'string') {
+          setError(detail);
+        } else if (err?.response?.status === 404) {
+          setError('Analysis job not found. Please run the pipeline from the Intake Workspace.');
+        } else if (err?.response?.status === 202) {
+          setError('Analysis is still in progress. Please wait for completion and refresh.');
+        } else {
+          setError('Could not retrieve benefits report summary. Please verify that intake processing has been run.');
+        }
       } finally {
         setLoading(false);
       }
@@ -326,8 +346,13 @@ export const ResultsPage: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
           </svg>
         </div>
-        <h2 className="text-lg font-bold text-slate-800">Retrieval Failed</h2>
-        <p className="text-sm text-slate-500 mt-2 px-6">{error}</p>
+        <h2 className="text-lg font-bold text-slate-800">{failedStep ? 'Pipeline Failed' : 'Retrieval Failed'}</h2>
+        {failedStep && (
+          <div className="mt-2 inline-flex items-center rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 ring-1 ring-inset ring-rose-600/10">
+            Failed at: {failedStep}
+          </div>
+        )}
+        <p className="text-sm text-slate-500 mt-3 px-6">{error}</p>
         <div className="mt-8 flex justify-center gap-4">
           <Link
             to="/intake"

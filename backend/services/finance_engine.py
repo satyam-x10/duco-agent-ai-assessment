@@ -1,6 +1,7 @@
 import uuid
 import logging
 from datetime import datetime
+from typing import List
 
 from app.schemas.cob_engine import COBDecision
 from app.schemas.finance_engine import (

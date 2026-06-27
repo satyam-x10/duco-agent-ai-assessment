@@ -286,14 +286,14 @@ const AgentPipelineVisualizer: React.FC<{ trace: any[] }> = ({ trace }) => {
                 )}
 
                 {/* Compact Node Card */}
-                <div className={`flex flex-col items-center gap-1 px-2.5 py-2 rounded-lg border shadow-sm flex-shrink-0 transition-all hover:scale-[1.04] duration-200 {statusBg}`} style={{ minWidth: '70px' }}>
+                <div className={`flex flex-col items-center gap-1 px-2.5 py-2 rounded-lg border shadow-sm flex-shrink-0 transition-all hover:scale-[1.04] duration-200 ${statusBg}`} style={{ minWidth: '70px' }}>
                   <span className="text-base leading-none">{step.icon}</span>
                   <div className="text-center">
                     <div className="text-[9px] font-extrabold tracking-tight whitespace-nowrap">
                       {step.short}
                     </div>
                     <div className="flex items-center justify-center gap-1 mt-0.5">
-                      <span className={`h-1 w-1 rounded-full flex-shrink-0 {statusDot}`} />
+                      <span className={`h-1 w-1 rounded-full flex-shrink-0 ${statusDot}`} />
                       <span className="text-[7px] font-bold uppercase tracking-wider opacity-70 whitespace-nowrap">
                         {status}
                       </span>
@@ -744,13 +744,13 @@ export const ResultsPage: React.FC = () => {
                       <span className="text-[10px]">{icon}</span>
                     </div>
 
-                    <div className={`space-y-1.5 border rounded-xl p-3.5 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 {cardBorder}`}>
+                    <div className={`space-y-1.5 border rounded-xl p-3.5 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 ${cardBorder}`}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="font-extrabold text-slate-800 text-sm">
                             {entry.agent_name}
                           </span>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold border uppercase tracking-wider {statusBadge}`}>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold border uppercase tracking-wider ${statusBadge}`}>
                             {entry.status}
                           </span>
                         </div>

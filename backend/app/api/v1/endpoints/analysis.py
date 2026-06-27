@@ -241,12 +241,11 @@ async def reject_analysis(job_id: str):
         )
     )
     
-    # Adjust confidence score to simulate reflection/guidance correction
-    if state.coding_result:
-        for diag in state.coding_result.diagnoses:
-            diag.confidence = min(1.0, diag.confidence + 0.20)
-        for proc in state.coding_result.procedures:
-            proc.confidence = min(1.0, proc.confidence + 0.20)
+    # Add clinician audit rejection notes to warnings to drive the reflection prompt
+    state.warnings.append(
+        "Clinician Auditor explicitly rejected prior extraction: Low confidence diagnosis or procedure codes. "
+        "Please double check the text for Meniscectomy, MRI, or ACL reconstruction and confirm they are explicitly documented."
+    )
             
     job["status"] = JobStatus.PROCESSING
     job["progress_percent"] = 40

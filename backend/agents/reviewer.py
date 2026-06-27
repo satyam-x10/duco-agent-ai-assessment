@@ -45,4 +45,9 @@ class ReviewerAgent(Agent):
         if not state.financial_report.secondary_policy_id:
             state.warnings.append("Note: Claim processed under single coverage; no secondary insurance resolved.")
             
+        # Check if manual human approval is required due to low confidence warnings
+        if any("Low confidence" in w for w in state.warnings):
+            state.requires_human_approval = True
+            logger.info(f"{self.name} flagged workflow as requiring manual clinician audit approval.")
+            
         logger.info(f"{self.name} completed validation audit. Generated {len(state.warnings)} warning indicators.")

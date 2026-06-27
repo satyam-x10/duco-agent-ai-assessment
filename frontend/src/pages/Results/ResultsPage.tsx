@@ -151,7 +151,7 @@ const CostFlowVisualizer: React.FC<{
 };
 
 // Expandable Pre-Auth Letters Panel
-const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
+const PreAuthLettersPanel: React.FC<{ letters: any[]; preauthLettersMetadata?: any[] }> = ({ letters, preauthLettersMetadata }) => {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0); // First letter open by default
 
   return (
@@ -161,6 +161,11 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
       <div className="space-y-4">
         {letters.map((letter, i) => {
           const isExpanded = expandedIndex === i;
+          const matchingMetadata = preauthLettersMetadata?.find(
+            (meta: any) => meta.insurer_name === letter.insurer_name
+          );
+          const downloadUrl = matchingMetadata ? matchingMetadata.download_url : '';
+          
           return (
             <div key={i} className="border border-slate-150 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
               <button
@@ -173,6 +178,16 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
                     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/10">
                       Drafted
                     </span>
+                    {downloadUrl && (
+                      <a
+                        href={`http://127.0.0.1:8000${downloadUrl}`}
+                        download
+                        onClick={(e) => e.stopPropagation()}
+                        className="ml-2 inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10.5px] font-extrabold text-blue-750 hover:bg-blue-100 transition-colors"
+                      >
+                        📥 Download PDF
+                      </a>
+                    )}
                   </div>
                   <p className="text-[10px] text-slate-450 mt-1">Policy ID: {letter.policy_id} • Generated at: {new Date(letter.generated_at).toLocaleDateString()}</p>
                 </div>
@@ -327,39 +342,68 @@ export const ResultsPage: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    const fetchReport = async () => {
-      if (!jobId) {
-        setError('No job ID provided. Please run an analysis first from the Intake Workspace.');
-        setLoading(false);
-        return;
+  const fetchReport = async () => {
+    if (!jobId) {
+      setError('No job ID provided. Please run an analysis first from the Intake Workspace.');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setFailedStep(null);
+    try {
+      const data = await ApiService.getReportsSummary(jobId);
+      setReport(data);
+    } catch (err: any) {
+      console.error('Failed to load reports summary:', err);
+      const detail = err?.response?.data?.detail;
+      if (detail && typeof detail === 'object') {
+        setFailedStep(detail.step || null);
+        setError(detail.message || 'Pipeline failed with an unknown error.');
+      } else if (typeof detail === 'string') {
+        setError(detail);
+      } else if (err?.response?.status === 404) {
+        setError('Analysis job not found. Please run the pipeline from the Intake Workspace.');
+      } else if (err?.response?.status === 202) {
+        setError('Analysis is still in progress. Please wait for completion and refresh.');
+      } else {
+        setError('Could not retrieve benefits report summary. Please verify that intake processing has been run.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!jobId) return;
+    try {
       setLoading(true);
-      setError(null);
-      setFailedStep(null);
-      try {
-        const data = await ApiService.getReportsSummary(jobId);
-        setReport(data);
-      } catch (err: any) {
-        console.error('Failed to load reports summary:', err);
-        // Extract structured error from 424 response
-        const detail = err?.response?.data?.detail;
-        if (detail && typeof detail === 'object') {
-          setFailedStep(detail.step || null);
-          setError(detail.message || 'Pipeline failed with an unknown error.');
-        } else if (typeof detail === 'string') {
-          setError(detail);
-        } else if (err?.response?.status === 404) {
-          setError('Analysis job not found. Please run the pipeline from the Intake Workspace.');
-        } else if (err?.response?.status === 202) {
-          setError('Analysis is still in progress. Please wait for completion and refresh.');
-        } else {
-          setError('Could not retrieve benefits report summary. Please verify that intake processing has been run.');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+      await ApiService.approveAnalysis(jobId);
+      await fetchReport();
+    } catch (err) {
+      console.error('Failed to approve analysis:', err);
+      alert('Failed to approve claim adjudication.');
+      setLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!jobId) return;
+    try {
+      setLoading(true);
+      await ApiService.rejectAnalysis(jobId);
+      // Wait for background job launch to register progress
+      setTimeout(async () => {
+        await fetchReport();
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to reject analysis:', err);
+      alert('Failed to reject claim adjudication.');
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchReport();
   }, [jobId]);
 
@@ -425,6 +469,57 @@ export const ResultsPage: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* Clinician Human-in-the-Loop Review Alert */}
+      {report.requires_human_approval && !report.human_approved && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-6 mb-8 shadow-sm">
+          <div className="flex gap-4 items-start">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700 shadow-sm mt-0.5">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="h-5 w-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.008v.008H12v-.008Z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h4 className="text-sm font-extrabold text-rose-900 uppercase tracking-wide">Clinician Audit Review Required</h4>
+              <p className="text-xs text-rose-800 mt-1.5 leading-relaxed font-semibold">
+                The Reviewer Agent has flagged low-confidence medical coding extraction on this claim. Clinical guidelines require manual clinician auditor review and sign-off before benefits are finalized.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors cursor-pointer"
+                >
+                  Approve Claim Adjudication
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReject}
+                  className="rounded-lg border border-rose-200 bg-white px-4 py-2 text-xs font-bold text-rose-700 shadow-sm hover:bg-rose-50 transition-colors cursor-pointer"
+                >
+                  Reject & Request Re-extraction (Reflection)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clinician Approval Confirmation Banner */}
+      {report.human_approved && (
+        <div className="rounded-xl border border-emerald-250 bg-emerald-50/50 p-5 mb-8 shadow-sm">
+          <div className="flex gap-3 items-center">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 shadow-inner">
+              ✓
+            </div>
+            <div>
+              <p className="text-xs font-bold text-emerald-900 leading-normal">
+                Clinician Sign-off Completed: This claim has been audited and approved. Letters and audio briefings have been finalized.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reviewer Warnings block */}
       {report.warnings && report.warnings.length > 0 && (
@@ -585,7 +680,7 @@ export const ResultsPage: React.FC = () => {
           </div>
 
           {/* Pre-Authorization Letters */}
-          <PreAuthLettersPanel letters={report.letters} />
+          <PreAuthLettersPanel letters={report.letters} preauthLettersMetadata={report.preauth_letters} />
 
         </div>
 
@@ -703,6 +798,15 @@ export const ResultsPage: React.FC = () => {
               >
                 {isPlayingAudio ? '⏹️ Stop Audio Briefing' : '🔊 Play Audio Briefing'}
               </button>
+              {report.audio_summary?.download_url && (
+                <a
+                  href={`http://127.0.0.1:8000${report.audio_summary.download_url}`}
+                  download
+                  className="mt-2.5 block text-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-1.5 text-[10.5px] font-extrabold text-slate-600 hover:bg-slate-200 hover:text-slate-700 transition-colors w-full cursor-pointer"
+                >
+                  📥 Download Audio Briefing (MP3)
+                </a>
+              )}
             </div>
 
             {/* Patient Briefing Narration Script */}

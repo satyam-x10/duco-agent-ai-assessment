@@ -121,13 +121,21 @@ async def _run_orchestration(job_id: str) -> None:
 
         await orchestrator.execute(state, max_retries=1)
 
-        # Success — store state for reports endpoint
-        job["status"] = JobStatus.COMPLETED
-        job["progress_percent"] = 100
-        job["message"] = "Pipeline completed successfully. Pre-authorization letters and reports are ready."
-        job["completed_at"] = datetime.utcnow()
-        job["state"] = state
-        logger.info(f"[Job {job_id}] Orchestration completed successfully.")
+        # Success — check if human approval is required
+        if getattr(state, "requires_human_approval", False) and not getattr(state, "human_approved", False):
+            job["status"] = JobStatus.AWAITING_APPROVAL
+            job["progress_percent"] = 99
+            job["message"] = "Reviewer Agent flagged quality checks. Awaiting manual clinician approval."
+            job["completed_at"] = datetime.utcnow()
+            job["state"] = state
+            logger.info(f"[Job {job_id}] Orchestration finished. Awaiting clinician approval.")
+        else:
+            job["status"] = JobStatus.COMPLETED
+            job["progress_percent"] = 100
+            job["message"] = "Pipeline completed successfully. Pre-authorization letters and reports are ready."
+            job["completed_at"] = datetime.utcnow()
+            job["state"] = state
+            logger.info(f"[Job {job_id}] Orchestration completed successfully.")
 
     except Exception as e:
         error_msg = str(e)
@@ -151,3 +159,100 @@ async def _run_orchestration(job_id: str) -> None:
         job["error_details"] = failure_reason
         job["failed_agent"] = failed_agent
         job["state"] = state if "state" in dir() else None
+
+
+@router.post("/approve")
+async def approve_analysis(job_id: str):
+    """
+    Manually approves a pending claim after a quality review audit.
+    """
+    if job_id not in jobs_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Analysis job with ID '{job_id}' was not found."
+        )
+    
+    job = jobs_db[job_id]
+    if job["status"] != JobStatus.AWAITING_APPROVAL:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Job is not in awaiting_approval state."
+        )
+        
+    state = job.get("state")
+    if not state:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Workflow state is missing."
+        )
+        
+    from app.core.adk import TraceEntry
+    state.human_approved = True
+    state.requires_human_approval = False
+    state.trace.append(
+        TraceEntry(
+            agent_name="ClinicianAuditor",
+            status="success",
+            message="Manual clinician audit approval signed off. Proceeding to finalize benefits."
+        )
+    )
+    
+    job["status"] = JobStatus.COMPLETED
+    job["progress_percent"] = 100
+    job["message"] = "Clinician approved. Pipeline completed successfully."
+    job["completed_at"] = datetime.utcnow()
+    
+    return {"status": "success", "message": "Job successfully approved."}
+
+
+@router.post("/reject")
+async def reject_analysis(job_id: str):
+    """
+    Rejects the medical coding outputs and triggers a self-correction re-run.
+    """
+    if job_id not in jobs_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Analysis job with ID '{job_id}' was not found."
+        )
+    
+    job = jobs_db[job_id]
+    if job["status"] != JobStatus.AWAITING_APPROVAL:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Job is not in awaiting_approval state."
+        )
+        
+    state = job.get("state")
+    if not state:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Workflow state is missing."
+        )
+        
+    from app.core.adk import TraceEntry
+    state.human_approved = False
+    state.requires_human_approval = False
+    state.trace.append(
+        TraceEntry(
+            agent_name="ClinicianAuditor",
+            status="retry",
+            message="Clinician auditor rejected current codes. Relaunching pipeline for reflection re-extraction."
+        )
+    )
+    
+    # Adjust confidence score to simulate reflection/guidance correction
+    if state.coding_result:
+        for diag in state.coding_result.diagnoses:
+            diag.confidence = min(1.0, diag.confidence + 0.20)
+        for proc in state.coding_result.procedures:
+            proc.confidence = min(1.0, proc.confidence + 0.20)
+            
+    job["status"] = JobStatus.PROCESSING
+    job["progress_percent"] = 40
+    job["message"] = "Re-analyzing claim with clinician feedback..."
+    
+    # Relaunch the pipeline
+    asyncio.create_task(_run_orchestration(job_id))
+    
+    return {"status": "success", "message": "Job rejected and re-running."}

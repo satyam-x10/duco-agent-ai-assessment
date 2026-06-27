@@ -135,4 +135,24 @@ export const ApiService = {
     });
     return response.data;
   },
+
+  /**
+   * Approves the analysis job manually.
+   */
+  async approveAnalysis(jobId: string): Promise<any> {
+    const response = await apiClient.post<any>(`/analysis/approve`, null, {
+      params: { job_id: jobId },
+    });
+    return response.data;
+  },
+
+  /**
+   * Rejects the analysis job and triggers re-analysis.
+   */
+  async rejectAnalysis(jobId: string): Promise<any> {
+    const response = await apiClient.post<any>(`/analysis/reject`, null, {
+      params: { job_id: jobId },
+    });
+    return response.data;
+  },
 };

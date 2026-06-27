@@ -54,5 +54,7 @@ class ReportSummaryResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list, description="Reviewer validation warnings")
     letters: List[PreAuthLetter] = Field(default_factory=list, description="Rendered markdown pre-authorization letters content")
     audio_briefing: Optional[AudioBriefing] = Field(None, description="Structured patient audio briefing summary narration")
+    requires_human_approval: bool = Field(False, description="Flag indicating if this claim requires human approval")
+    human_approved: bool = Field(False, description="Flag indicating if the claim has been manually approved")
 
 

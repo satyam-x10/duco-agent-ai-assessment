@@ -14,8 +14,8 @@ def clean_service():
 
 
 @pytest.mark.asyncio
-@patch("services.medical_coding.genai.GenerativeModel")
-async def test_medical_coding_gemini_success(mock_generative_model, monkeypatch):
+@patch("services.medical_coding.genai.Client")
+async def test_medical_coding_gemini_success(mock_client_class, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     
     mock_response = MagicMock()
@@ -27,7 +27,10 @@ async def test_medical_coding_gemini_success(mock_generative_model, monkeypatch)
             {"code": "29881", "description": "Arthroscopic Meniscectomy", "confidence": 0.98}
         ]
     })
-    mock_generative_model.return_value.generate_content.return_value = mock_response
+    
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_client_class.return_value = mock_client
 
     service = MedicalCodingService()
     doc = ProcessedDocument(
@@ -56,14 +59,17 @@ async def test_medical_coding_gemini_success(mock_generative_model, monkeypatch)
 
 
 @pytest.mark.asyncio
-@patch("services.medical_coding.genai.GenerativeModel")
-async def test_medical_coding_gemini_malformed_response(mock_generative_model, monkeypatch):
+@patch("services.medical_coding.genai.Client")
+async def test_medical_coding_gemini_malformed_response(mock_client_class, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     
     # Return malformed/invalid JSON text
     mock_response = MagicMock()
     mock_response.text = "invalid json text payload"
-    mock_generative_model.return_value.generate_content.return_value = mock_response
+    
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_client_class.return_value = mock_client
 
     service = MedicalCodingService()
     doc = ProcessedDocument(

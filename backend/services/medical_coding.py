@@ -3,8 +3,8 @@ import json
 import logging
 from typing import List
 from pydantic import BaseModel
-import google.generativeai as genai
-from google.generativeai.types import GenerationConfig
+from google import genai
+from google.genai import types
 from app.schemas.document_intelligence import ProcessedDocument
 from app.schemas.medical_coding import CodingResult, Diagnosis, Procedure
 
@@ -41,16 +41,16 @@ class MedicalCodingService:
         prompt = self._build_prompt(doc.extracted_text)
 
         try:
-            genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            client = genai.Client(api_key=self.api_key)
 
             logger.info("Calling Gemini API to infer medical codes from clinical text.")
-            response = model.generate_content(
-                prompt,
-                generation_config=GenerationConfig(
-                    response_mime_type="application/json",
-                    response_schema=GeminiCodingResponse,
-                ),
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": GeminiCodingResponse,
+                },
             )
 
             raw_text = response.text

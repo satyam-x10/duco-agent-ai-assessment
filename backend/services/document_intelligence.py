@@ -3,7 +3,8 @@ import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from app.schemas.intake import DocumentType
 from app.schemas.document_intelligence import ProcessedDocument
@@ -102,17 +103,19 @@ class PDFProcessor(DocumentProcessor):
                 "but GEMINI_API_KEY is not configured. Cannot extract text."
             )
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            client = genai.Client(api_key=api_key)
 
             logger.info(f"[Gemini OCR] Calling Gemini Vision API on {file_path.name}")
-            response = model.generate_content([
-                {
-                    "mime_type": "application/pdf",
-                    "data": file_path.read_bytes()
-                },
-                "Perform OCR on this scanned medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
-            ])
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part.from_bytes(
+                        data=file_path.read_bytes(),
+                        mime_type="application/pdf",
+                    ),
+                    "Perform OCR on this scanned medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
+                ]
+            )
             text = response.text
             if not text or not text.strip():
                 raise RuntimeError(f"Gemini OCR returned empty response for '{file_path.name}'.")
@@ -142,17 +145,19 @@ class ImageProcessor(DocumentProcessor):
         mime_type = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
 
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            client = genai.Client(api_key=api_key)
 
             logger.info(f"[Gemini Vision OCR] Calling Gemini API on {file_path.name}")
-            response = model.generate_content([
-                {
-                    "mime_type": mime_type,
-                    "data": file_path.read_bytes()
-                },
-                "Perform OCR on this medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
-            ])
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part.from_bytes(
+                        data=file_path.read_bytes(),
+                        mime_type=mime_type,
+                    ),
+                    "Perform OCR on this medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
+                ]
+            )
             extracted_text = response.text
             if not extracted_text or not extracted_text.strip():
                 raise RuntimeError(f"Gemini Vision OCR returned empty response for '{file_path.name}'.")

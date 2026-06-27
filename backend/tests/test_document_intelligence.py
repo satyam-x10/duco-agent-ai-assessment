@@ -65,8 +65,8 @@ async def test_pdf_processor_with_extractable_text(mock_pdf_reader):
 
 @pytest.mark.asyncio
 @patch("services.document_intelligence.PdfReader")
-@patch("services.document_intelligence.genai.GenerativeModel")
-async def test_pdf_processor_scanned_fallback(mock_genai_model, mock_pdf_reader, monkeypatch):
+@patch("services.document_intelligence.genai.Client")
+async def test_pdf_processor_scanned_fallback(mock_client_class, mock_pdf_reader, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
     
     mock_page = MagicMock()
@@ -75,7 +75,10 @@ async def test_pdf_processor_scanned_fallback(mock_genai_model, mock_pdf_reader,
     
     mock_response = MagicMock()
     mock_response.text = "Scanned PDF extracted content via Gemini OCR"
-    mock_genai_model.return_value.generate_content.return_value = mock_response
+    
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_client_class.return_value = mock_client
     
     with tempfile.NamedTemporaryFile(suffix=".pdf", mode="wb", delete=False) as tmp:
         tmp.write(b"%PDF-1.4 mock content")
@@ -87,20 +90,23 @@ async def test_pdf_processor_scanned_fallback(mock_genai_model, mock_pdf_reader,
         
         assert processed.extracted_text == "Scanned PDF extracted content via Gemini OCR"
         assert processed.confidence == 0.90
-        assert processed.metadata["parser"] == "PDFProcessor (OCR Fallback)"
+        assert processed.metadata["parser"] == "PDFProcessor (Gemini OCR)"
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
 
 
 @pytest.mark.asyncio
-@patch("services.document_intelligence.genai.GenerativeModel")
-async def test_image_processor_gemini(mock_genai_model, monkeypatch):
+@patch("services.document_intelligence.genai.Client")
+async def test_image_processor_gemini(mock_client_class, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
     
     mock_response = MagicMock()
     mock_response.text = "Metro Imaging radiology report findings meniscus tear"
-    mock_genai_model.return_value.generate_content.return_value = mock_response
+    
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_client_class.return_value = mock_client
     
     with tempfile.NamedTemporaryFile(suffix=".png", mode="w", delete=False) as tmp:
         tmp.write("")

@@ -7,21 +7,21 @@ class MedicalCode(BaseModel):
     code: str = Field(..., description="The standard CPT or ICD-10 code string")
     code_type: str = Field(..., description="The type of medical code ('CPT' or 'ICD-10')")
     description: str = Field(..., description="Clinical description of the code")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="AI confidence score for this inference")
+    confidence: float = Field(..., description="AI confidence score for this inference")
 
 
 class Diagnosis(BaseModel):
     """Structured ICD-10 diagnosis code details."""
     code: str = Field(..., description="The ICD-10 classification code (e.g. M23.231)")
     description: str = Field(..., description="Inferred diagnosis description")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Inference confidence score")
+    confidence: float = Field(..., description="Inference confidence score")
 
 
 class Procedure(BaseModel):
     """Structured CPT procedure code details."""
     code: str = Field(..., description="The CPT-4 procedure code (e.g. 29881)")
     description: str = Field(..., description="Inferred procedure description")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Inference confidence score")
+    confidence: float = Field(..., description="Inference confidence score")
 
 
 class CodingResult(BaseModel):

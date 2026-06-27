@@ -2,84 +2,14 @@ import os
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List
-from fastapi import status
-from pypdf import PdfReader
-import google.generativeai as genai
+from typing import Dict
+from google import genai
+from google.genai import types
 
 from app.schemas.intake import DocumentType
 from app.schemas.document_intelligence import ProcessedDocument
 
 logger = logging.getLogger(__name__)
-
-
-# High-fidelity mock text representations matching CPT codes and COB scenarios
-MOCK_DOCUMENT_TEXTS = {
-    DocumentType.PRIYA_PT_INVOICE: """
-Peak Physical Therapy Clinic
-Invoice ID: PT-2023-9981
-Date: Oct 18, 2023
-Patient Name: Priya Patel
-
-Billing details:
-Date       CPT Code  Description                         Units  Unit Cost  Total
-2023-10-10 97110     Therapeutic Procedure (Exercise)    1      $150.00    $150.00
-2023-10-12 97110     Therapeutic Procedure (Exercise)    1      $150.00    $150.00
-2023-10-15 97110     Therapeutic Procedure (Exercise)    1      $150.00    $150.00
-2023-10-10 97140     Manual Therapy Techniques           1      $100.00    $100.00
-2023-10-12 97140     Manual Therapy Techniques           1      $100.00    $100.00
-
-Total Billed: $650.00
-Amount Paid: $0.00 (Pending insurance coordination)
-""",
-    DocumentType.AARAV_MRI_REPORT: """
-Metro Imaging and Radiology Services
-Report ID: RAD-MRI-8827
-Date: Oct 20, 2023
-Patient Name: Aarav Patel
-Date of Birth: 2012-05-14
-
-Procedure Code: CPT 73721 (MRI Lower Extremity Joint without contrast, Right Knee)
-
-Clinical History: Knee pain following sports activity. Medial joint line tenderness.
-
-Findings:
-There is a complete vertical tear of the posterior horn of the medial meniscus.
-Minimal joint effusion is present. The anterior cruciate ligament (ACL) and posterior
-cruciate ligament (PCL) are intact. Collateral ligaments are normal.
-
-Diagnosis: Complete medial meniscus posterior horn tear, right knee joint.
-Total Facility Charge: $1200.00
-""",
-    DocumentType.SURGEON_ESTIMATE: """
-Knee Specialist Clinic & Surgical Center
-Surgical Estimate ID: EST-5527
-Date: Oct 22, 2023
-Patient Name: Aarav Patel
-Date of Birth: 2012-05-14
-
-Proposed Procedure: Right Knee Arthroscopy with Medial Meniscectomy
-Procedure Code: CPT 29881 (Knee arthroscopy with meniscectomy)
-Scheduled Date: Nov 15, 2023
-
-Fee Schedule Estimates:
-1. Surgeon Professional Fee (CPT 29881): $3200.00
-2. Facility Operating Room Fee (Metro Surgical): $4500.00
-3. Anesthesia Fee (Standard Pro-rata 2hr): $1200.00
-
-Total Billed Estimate: $8900.00
-Pre-authorization is required for CPT 29881.
-""",
-    DocumentType.USER_QUERY_TRANSCRIPT: """
-Coordination of Benefits (COB) Query Transcript
-Date: Oct 24, 2023
-User Query:
-"Hello, I am setting up the Coordination of Benefits for my family. My wife Priya Patel has dual coverage: she is the primary subscriber under BlueShield Cross (Group: BS120, Member: 98765) and she is also covered as a dependent under my secondary plan UnitedHealth (Group: UH990, Member: 12345).
-Additionally, my son Aarav Patel is covered under both plans. I am the primary subscriber for Aarav under UnitedHealth (Group: UH990, Member: 12345), and he is a dependent under Priya's BlueShield Cross (Group: BS120, Member: 98765).
-Priya recently completed physical therapy (billed amount $650.00) and Aarav has an upcoming knee meniscus surgery (surgeon estimate $8,900.00 and MRI facility cost $1,200.00).
-Could you analyze these documents, determine which plan is primary for Priya and Aarav, calculate what each insurer is responsible to pay, and write the prior-authorization request letters?"
-"""
-}
 
 
 class DocumentProcessor(ABC):
@@ -103,6 +33,9 @@ class TextProcessor(DocumentProcessor):
             logger.error(f"Failed to read text file: {e}")
             raise IOError(f"Failed to parse text document: {str(e)}")
 
+        if not content.strip():
+            raise ValueError(f"Text document at '{file_path}' is empty.")
+
         return ProcessedDocument(
             document_type=document_type,
             extracted_text=content,
@@ -121,8 +54,9 @@ class PDFProcessor(DocumentProcessor):
 
     async def process(self, file_path: Path, document_type: DocumentType) -> ProcessedDocument:
         logger.info(f"PDFProcessor parsing PDF document {file_path}")
-        
+
         try:
+            from pypdf import PdfReader
             reader = PdfReader(file_path)
             page_count = len(reader.pages)
             text_list = []
@@ -130,19 +64,19 @@ class PDFProcessor(DocumentProcessor):
                 txt = page.extract_text()
                 if txt:
                     text_list.append(txt)
-            
+
             extracted_text = "\n".join(text_list)
-            
-            # Fallback to OCR if no text was found (scanned PDF)
+
+            # Fall back to OCR if no text was found (scanned PDF)
             if not extracted_text.strip():
-                logger.info(f"PDF {file_path.name} contains no extractable text. Falling back to Gemini Vision OCR.")
-                extracted_text = await self._fallback_ocr(file_path, document_type)
+                logger.info(f"PDF {file_path.name} contains no extractable text. Attempting Gemini Vision OCR.")
+                extracted_text = await self._ocr_with_gemini(file_path)
                 confidence = 0.90
-                parser_name = "PDFProcessor (OCR Fallback)"
+                parser_name = "PDFProcessor (Gemini OCR)"
             else:
                 confidence = 0.99
                 parser_name = "PDFProcessor"
-                
+
             return ProcessedDocument(
                 document_type=document_type,
                 extracted_text=extracted_text,
@@ -154,92 +88,94 @@ class PDFProcessor(DocumentProcessor):
                     "file_path": str(file_path)
                 }
             )
+        except (IOError, RuntimeError, ValueError):
+            raise
         except Exception as e:
             logger.error(f"Failed to parse PDF document: {e}")
-            raise IOError(f"Failed to parse PDF document: {str(e)}")
+            raise IOError(f"Failed to parse PDF document '{file_path.name}': {str(e)}")
 
-    async def _fallback_ocr(self, file_path: Path, document_type: DocumentType) -> str:
-        """Performs fallback Gemini OCR directly on PDF file bytes if credentials exist."""
+    async def _ocr_with_gemini(self, file_path: Path) -> str:
+        """Performs Gemini Vision OCR on a scanned PDF. Raises on failure."""
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            logger.warning("[Gemini Fallback] GEMINI_API_KEY is not configured. Falling back to mock text.")
-            return MOCK_DOCUMENT_TEXTS.get(
-                document_type,
-                f"Mock scanned PDF text for slot '{document_type.value}'."
+            raise RuntimeError(
+                f"Document '{file_path.name}' appears to be a scanned PDF requiring OCR, "
+                "but GEMINI_API_KEY is not configured. Cannot extract text."
             )
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            logger.info(f"[Gemini OCR Fallback] Calling Gemini API on {file_path.name}")
-            response = model.generate_content([
-                {
-                    "mime_type": "application/pdf",
-                    "data": file_path.read_bytes()
-                },
-                "Perform OCR on this scanned medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
-            ])
-            return response.text
-        except Exception as e:
-            logger.error(f"Gemini OCR fallback failed for scanned PDF: {e}")
-            return MOCK_DOCUMENT_TEXTS.get(
-                document_type,
-                f"Mock scanned PDF text for slot '{document_type.value}'."
+            client = genai.Client(api_key=api_key)
+
+            logger.info(f"[Gemini OCR] Calling Gemini Vision API on {file_path.name}")
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part.from_bytes(
+                        data=file_path.read_bytes(),
+                        mime_type="application/pdf",
+                    ),
+                    "Perform OCR on this scanned medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
+                ]
             )
+            text = response.text
+            if not text or not text.strip():
+                raise RuntimeError(f"Gemini OCR returned empty response for '{file_path.name}'.")
+            return text
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.error(f"Gemini OCR failed for scanned PDF '{file_path.name}': {e}")
+            raise RuntimeError(f"Gemini Vision OCR failed for '{file_path.name}': {str(e)}")
 
 
 class ImageProcessor(DocumentProcessor):
-    """Concrete processor parsing image formats. Integrates Gemini Vision OCR API."""
+    """Concrete processor parsing image formats. Uses Gemini Vision OCR API."""
 
     async def process(self, file_path: Path, document_type: DocumentType) -> ProcessedDocument:
         logger.info(f"ImageProcessor executing OCR on image {file_path}")
-        
+
         api_key = os.environ.get("GEMINI_API_KEY")
+        print(f"API KEY was {api_key}")
+        if not api_key:
+            raise RuntimeError(
+                f"Image document '{file_path.name}' requires Gemini Vision OCR, "
+                "but GEMINI_API_KEY is not configured. Cannot extract text."
+            )
+
         ext = file_path.suffix.lower()
         mime_type = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
-        
-        if not api_key:
-            logger.warning("[ImageProcessor] GEMINI_API_KEY is not configured. Falling back to mock OCR text.")
-            extracted_text = MOCK_DOCUMENT_TEXTS.get(
-                document_type,
-                f"Mock OCR image text for slot '{document_type.value}'."
-            )
-            ocr_method = "GeminiVisionMockFallback"
-            confidence = 0.96
-          
-        else:
-            try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                
-                logger.info(f"[Gemini Vision OCR] Calling Gemini API on {file_path.name}")
-                response = model.generate_content([
-                    {
-                        "mime_type": mime_type,
-                        "data": file_path.read_bytes()
-                    },
+
+        try:
+            client = genai.Client(api_key=api_key)
+
+            logger.info(f"[Gemini Vision OCR] Calling Gemini API on {file_path.name}")
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part.from_bytes(
+                        data=file_path.read_bytes(),
+                        mime_type=mime_type,
+                    ),
                     "Perform OCR on this medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
-                ])
-                extracted_text = response.text
-                ocr_method = "GeminiVisionOCR"
-                confidence = 0.98
-            except Exception as e:
-                logger.error(f"Gemini Vision OCR API call failed: {e}")
-                extracted_text = MOCK_DOCUMENT_TEXTS.get(
-                    document_type,
-                    f"Mock OCR image text for slot '{document_type.value}'."
-                )
-                ocr_method = "GeminiVisionErrorFallback"
-                confidence = 0.96
+                ]
+            )
+            extracted_text = response.text
+            if not extracted_text or not extracted_text.strip():
+                raise RuntimeError(f"Gemini Vision OCR returned empty response for '{file_path.name}'.")
+
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.error(f"Gemini Vision OCR API call failed for '{file_path.name}': {e}")
+            raise RuntimeError(f"Gemini Vision OCR failed for '{file_path.name}': {str(e)}")
 
         return ProcessedDocument(
             document_type=document_type,
             extracted_text=extracted_text,
             page_count=1,
-            confidence=confidence,
+            confidence=0.98,
             metadata={
                 "parser": "ImageProcessor",
-                "ocr_method": ocr_method,
+                "ocr_method": "GeminiVisionOCR",
                 "file_path": str(file_path)
             }
         )
@@ -274,7 +210,7 @@ class DocumentIntelligenceService:
     async def process_document(self, file_path: Path, document_type: DocumentType) -> ProcessedDocument:
         if not file_path.exists():
             raise FileNotFoundError(f"Document file does not exist at path '{file_path}'.")
-            
+
         processor = self.factory.get_processor(file_path)
         logger.info(f"Executing document intelligence pipeline on '{file_path.name}' for slot '{document_type.value}'")
         return await processor.process(file_path, document_type)

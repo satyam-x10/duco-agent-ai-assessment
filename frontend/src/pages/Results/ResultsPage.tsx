@@ -24,7 +24,7 @@ const CostFlowVisualizer: React.FC<{
           <p className="text-sm font-extrabold text-slate-800">Summit Clinic</p>
         </div>
       </div>
-      
+
       {/* Connector 1: Provider -> Primary */}
       <div className="flex flex-col items-center my-1.5">
         <svg width="200" height="75" className="overflow-visible">
@@ -40,7 +40,7 @@ const CostFlowVisualizer: React.FC<{
           <path d="M 100 0 L 100 65" stroke="url(#grad1)" strokeWidth="3" markerEnd="url(#arrow)" strokeDasharray="4 2" />
           <rect x="35" y="18" width="130" height="28" rx="6" fill="#eff6ff" stroke="#bfdbfe" strokeWidth="1" className="shadow-sm" />
           <text x="100" y="36" textAnchor="middle" fill="#1e3a8a" className="text-xs font-bold font-mono">
-            Billed: ${billed.toFixed(2)}
+            Billed: {billed.toFixed(2)}
           </text>
         </svg>
       </div>
@@ -71,7 +71,7 @@ const CostFlowVisualizer: React.FC<{
           <path d="M 100 0 L 100 65" stroke="url(#grad2)" strokeWidth="3" markerEnd="url(#arrow-indigo)" strokeDasharray="4 2" />
           <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
           <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
-            Paid: ${primaryPaid.toFixed(2)}
+            Paid: {primaryPaid.toFixed(2)}
           </text>
         </svg>
       </div>
@@ -102,7 +102,7 @@ const CostFlowVisualizer: React.FC<{
           <path d="M 100 0 L 100 65" stroke="url(#grad3)" strokeWidth="3" markerEnd="url(#arrow-amber)" strokeDasharray="4 2" />
           <rect x="35" y="18" width="130" height="28" rx="6" fill="#e0e7ff" stroke="#c7d2fe" strokeWidth="1" className="shadow-sm" />
           <text x="100" y="36" textAnchor="middle" fill="#3730a3" className="text-xs font-bold font-mono">
-            Paid: ${secondaryPaid.toFixed(2)}
+            Paid: {secondaryPaid.toFixed(2)}
           </text>
         </svg>
       </div>
@@ -114,7 +114,7 @@ const CostFlowVisualizer: React.FC<{
         </div>
         <div>
           <h4 className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Patient Responsibility</h4>
-          <p className="text-sm font-extrabold text-slate-800">Remaining: ${patientOwes.toFixed(2)}</p>
+          <p className="text-sm font-extrabold text-slate-800">Remaining: {patientOwes.toFixed(2)}</p>
         </div>
       </div>
     </div>
@@ -128,7 +128,7 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Generated Prior-Authorization Requests</h3>
-      
+
       <div className="space-y-4">
         {letters.map((letter, i) => {
           const isExpanded = expandedIndex === i;
@@ -154,15 +154,15 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
                     viewBox="0 0 24 24"
                     strokeWidth={2.5}
                     stroke="currentColor"
-                    className={`h-4 w-4 text-slate-400 transition-transform duration-250 ${isExpanded ? 'rotate-180' : ''}`}
+                    className={`h-4 w-4 text-slate-400 transition-transform duration-250 {isExpanded ? 'rotate-180' : ''}`}
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                   </svg>
                 </div>
               </button>
-              
+
               {isExpanded && (
-                <div className="border-t border-slate-150 bg-slate-950 p-5 font-mono text-[11px] leading-relaxed text-slate-205 overflow-x-auto whitespace-pre-wrap max-h-120 scrollbar-thin">
+                <div className="border-t border-slate-150 bg-slate-950 p-5 font-mono text-[11px] leading-relaxed text-slate-200 overflow-x-auto whitespace-pre-wrap max-h-72 overflow-y-auto scrollbar-thin">
                   {letter.letter_content}
                 </div>
               )}
@@ -177,18 +177,6 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
   );
 };
 
-const getAgentDuration = (agentName: string): string => {
-  const durations: Record<string, string> = {
-    IntakeAgent: '0.8s',
-    DocIntelAgent: '2.4s',
-    MedicalCodingAgent: '3.1s',
-    InsuranceAgent: '1.5s',
-    COBAgent: '1.2s',
-    FinanceAgent: '1.9s',
-    ReviewerAgent: '0.7s',
-  };
-  return durations[agentName] || '1.0s';
-};
 
 const getAgentIcon = (agentName: string): string => {
   const icons: Record<string, string> = {
@@ -216,63 +204,62 @@ const AgentPipelineVisualizer: React.FC<{ trace: any[] }> = ({ trace }) => {
   ];
 
   return (
-    <div className="bg-slate-50/50 rounded-2xl border border-slate-200/80 p-5 shadow-inner mb-6">
-      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-4 text-center">
+    <div className="bg-slate-50/50 rounded-2xl border border-slate-200/80 p-4 shadow-inner mb-6">
+      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-3 text-center">
         Multi-Agent Adjudication Pipeline
       </h4>
-      
-      {/* Horizontal workflow row on large screens, grid on small screens */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-2">
-        {steps.map((step, idx) => {
-          const matchingTrace = trace?.find((t) => t.agent_name === step.id);
-          const status = matchingTrace ? matchingTrace.status : 'pending';
-          
-          let statusBg = 'bg-slate-100 border-slate-200 text-slate-400';
-          let statusDot = 'bg-slate-350';
-          
-          if (status === 'success') {
-            statusBg = 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/10';
-            statusDot = 'bg-emerald-500 animate-pulse';
-          } else if (status === 'warning') {
-            statusBg = 'bg-amber-50 border-amber-300 text-amber-700 ring-2 ring-amber-500/10';
-            statusDot = 'bg-amber-500';
-          } else if (status === 'error') {
-            statusBg = 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/10';
-            statusDot = 'bg-rose-500';
-          }
 
-          return (
-            <React.Fragment key={step.id}>
-              {/* Connector between nodes */}
-              {idx > 0 && (
-                <div className="hidden md:flex flex-1 h-[2px] bg-slate-200 relative min-w-[12px] max-w-[48px]">
-                  {status !== 'pending' && (
-                    <div className="absolute inset-0 bg-emerald-400/70 animate-pulse rounded-full" />
-                  )}
-                </div>
-              )}
-              {idx > 0 && (
-                <div className="md:hidden text-slate-300 text-xs">▼</div>
-              )}
+      {/* Scrollable horizontal workflow row */}
+      <div className="overflow-x-auto pb-1">
+        <div className="flex items-center gap-1 min-w-max">
+          {steps.map((step, idx) => {
+            const matchingTrace = trace?.find((t) => t.agent_name === step.id);
+            const status = matchingTrace ? matchingTrace.status : 'pending';
 
-              {/* Node Card */}
-              <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border shadow-sm w-36 md:w-auto md:flex-1 text-center justify-start md:justify-center transition-all hover:scale-[1.03] duration-200 ${statusBg}`}>
-                <span className="text-sm">{step.icon}</span>
-                <div className="text-left md:text-center min-w-0">
-                  <div className="text-[10px] font-extrabold tracking-tight truncate">
-                    {step.short}
+            let statusBg = 'bg-slate-100 border-slate-200 text-slate-400';
+            let statusDot = 'bg-slate-400';
+
+            if (status === 'success') {
+              statusBg = 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-1 ring-emerald-500/20';
+              statusDot = 'bg-emerald-500 animate-pulse';
+            } else if (status === 'warning') {
+              statusBg = 'bg-amber-50 border-amber-300 text-amber-700 ring-1 ring-amber-500/20';
+              statusDot = 'bg-amber-500';
+            } else if (status === 'error') {
+              statusBg = 'bg-rose-50 border-rose-300 text-rose-700 ring-1 ring-rose-500/20';
+              statusDot = 'bg-rose-500';
+            }
+
+            return (
+              <React.Fragment key={step.id}>
+                {/* Connector between nodes */}
+                {idx > 0 && (
+                  <div className="flex items-center flex-shrink-0 w-5 h-[2px] bg-slate-200 relative">
+                    {status !== 'pending' && (
+                      <div className="absolute inset-0 bg-emerald-400/60 rounded-full" />
+                    )}
                   </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
-                    <span className="text-[8px] font-bold uppercase tracking-wider text-slate-450 truncate">
-                      {status}
-                    </span>
+                )}
+
+                {/* Compact Node Card */}
+                <div className={`flex flex-col items-center gap-1 px-2.5 py-2 rounded-lg border shadow-sm flex-shrink-0 transition-all hover:scale-[1.04] duration-200 {statusBg}`} style={{ minWidth: '70px' }}>
+                  <span className="text-base leading-none">{step.icon}</span>
+                  <div className="text-center">
+                    <div className="text-[9px] font-extrabold tracking-tight whitespace-nowrap">
+                      {step.short}
+                    </div>
+                    <div className="flex items-center justify-center gap-1 mt-0.5">
+                      <span className={`h-1 w-1 rounded-full flex-shrink-0 {statusDot}`} />
+                      <span className="text-[7px] font-bold uppercase tracking-wider opacity-70 whitespace-nowrap">
+                        {status}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </React.Fragment>
-          );
-        })}
+              </React.Fragment>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -281,22 +268,42 @@ const AgentPipelineVisualizer: React.FC<{ trace: any[] }> = ({ trace }) => {
 // Main ResultsPage Component
 export const ResultsPage: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const jobId = searchParams.get('job_id') || 'mock-job-id';
+  const jobId = searchParams.get('job_id');
 
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [failedStep, setFailedStep] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchReport = async () => {
+      if (!jobId) {
+        setError('No job ID provided. Please run an analysis first from the Intake Workspace.');
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
+      setFailedStep(null);
       try {
         const data = await ApiService.getReportsSummary(jobId);
         setReport(data);
       } catch (err: any) {
         console.error('Failed to load reports summary:', err);
-        setError('Could not retrieve benefits report summary. Please verify that intake processing has been run.');
+        // Extract structured error from 424 response
+        const detail = err?.response?.data?.detail;
+        if (detail && typeof detail === 'object') {
+          setFailedStep(detail.step || null);
+          setError(detail.message || 'Pipeline failed with an unknown error.');
+        } else if (typeof detail === 'string') {
+          setError(detail);
+        } else if (err?.response?.status === 404) {
+          setError('Analysis job not found. Please run the pipeline from the Intake Workspace.');
+        } else if (err?.response?.status === 202) {
+          setError('Analysis is still in progress. Please wait for completion and refresh.');
+        } else {
+          setError('Could not retrieve benefits report summary. Please verify that intake processing has been run.');
+        }
       } finally {
         setLoading(false);
       }
@@ -327,8 +334,13 @@ export const ResultsPage: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
           </svg>
         </div>
-        <h2 className="text-lg font-bold text-slate-800">Retrieval Failed</h2>
-        <p className="text-sm text-slate-500 mt-2 px-6">{error}</p>
+        <h2 className="text-lg font-bold text-slate-800">{failedStep ? 'Pipeline Failed' : 'Retrieval Failed'}</h2>
+        {failedStep && (
+          <div className="mt-2 inline-flex items-center rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 ring-1 ring-inset ring-rose-600/10">
+            Failed at: {failedStep}
+          </div>
+        )}
+        <p className="text-sm text-slate-500 mt-3 px-6">{error}</p>
         <div className="mt-8 flex justify-center gap-4">
           <Link
             to="/intake"
@@ -385,10 +397,10 @@ export const ResultsPage: React.FC = () => {
 
       {/* Dashboard Main Grid Layout */}
       <div className="grid gap-8 lg:grid-cols-12 items-start">
-        
+
         {/* Left Column (7/12 width) - Detailed visual panels */}
         <div className="lg:col-span-7 space-y-8">
-          
+
           {/* Financial Breakdown Cards */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Financial Allocations Summary</h3>
@@ -396,25 +408,25 @@ export const ResultsPage: React.FC = () => {
               <div className="rounded-lg bg-slate-50 p-4 border border-slate-100 shadow-sm hover:scale-103 transition-transform duration-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Billed</span>
                 <p className="text-xl font-extrabold text-slate-900 mt-1">
-                  ${report.financial_summary.total_billed.toFixed(2)}
+                  {report.financial_summary.total_billed.toFixed(2)}
                 </p>
               </div>
               <div className="rounded-lg bg-blue-50/50 p-4 border border-blue-100 shadow-sm hover:scale-103 transition-transform duration-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Primary Insurer Paid</span>
                 <p className="text-xl font-extrabold text-blue-700 mt-1">
-                  ${report.financial_summary.primary_paid.toFixed(2)}
+                  {report.financial_summary.primary_paid.toFixed(2)}
                 </p>
               </div>
               <div className="rounded-lg bg-indigo-50/50 p-4 border border-indigo-100 shadow-sm hover:scale-103 transition-transform duration-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Secondary Insurer Paid</span>
                 <p className="text-xl font-extrabold text-indigo-700 mt-1">
-                  ${report.financial_summary.secondary_paid.toFixed(2)}
+                  {report.financial_summary.secondary_paid.toFixed(2)}
                 </p>
               </div>
               <div className="rounded-lg bg-amber-50 p-4 border border-amber-150 shadow-sm hover:scale-103 transition-transform duration-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Patient Responsibility</span>
                 <p className="text-xl font-extrabold text-amber-850 mt-1">
-                  ${report.financial_summary.patient_responsibility.toFixed(2)}
+                  {report.financial_summary.patient_responsibility.toFixed(2)}
                 </p>
               </div>
             </div>
@@ -436,7 +448,7 @@ export const ResultsPage: React.FC = () => {
           {/* Medical Coding Table */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Medical Coding Inference</h3>
-            
+
             <div className="space-y-6">
               <div>
                 <h4 className="text-xs font-bold text-slate-500 mb-2.5 uppercase tracking-wide">Diagnosis (ICD-10-CM)</h4>
@@ -461,7 +473,7 @@ export const ResultsPage: React.FC = () => {
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <div className="h-1.5 w-16 rounded-full bg-slate-100 overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded-full animate-pulse-slow" style={{ width: `${diag.confidence * 100}%` }} />
+                                <div className="h-full bg-emerald-500 rounded-full animate-pulse-slow" style={{ width: `{diag.confidence * 100}%` }} />
                               </div>
                               <span className="font-mono font-bold text-slate-550">{(diag.confidence * 100).toFixed(0)}%</span>
                             </div>
@@ -501,7 +513,7 @@ export const ResultsPage: React.FC = () => {
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <div className="h-1.5 w-16 rounded-full bg-slate-100 overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded-full animate-pulse-slow" style={{ width: `${proc.confidence * 100}%` }} />
+                                <div className="h-full bg-emerald-500 rounded-full animate-pulse-slow" style={{ width: `{proc.confidence * 100}%` }} />
                               </div>
                               <span className="font-mono font-bold text-slate-550">{(proc.confidence * 100).toFixed(0)}%</span>
                             </div>
@@ -527,15 +539,15 @@ export const ResultsPage: React.FC = () => {
 
         {/* Right Column (5/12 width) - Timeline & pipeline tracking */}
         <div className="lg:col-span-5 space-y-8">
-          
+
           {/* Workflow Summary Checklist */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Adjudication Progress Timeline</h3>
-            
+
             <div className="space-y-3.5">
               {Object.entries(report.workflow_summary || {}).map(([step, completed], i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                  <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border {
                     completed 
                       ? 'bg-emerald-50 border-emerald-500 text-emerald-600 shadow-sm' 
                       : 'border-slate-200 text-slate-300'
@@ -548,7 +560,7 @@ export const ResultsPage: React.FC = () => {
                       <div className="h-1.5 w-1.5 rounded-full bg-slate-350" />
                     )}
                   </div>
-                  <span className={`text-xs font-semibold ${completed ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>
+                  <span className={`text-xs font-semibold {completed ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>
                     {step}
                   </span>
                 </div>
@@ -559,15 +571,14 @@ export const ResultsPage: React.FC = () => {
           {/* Workflow Trace Timeline */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Agent Execution Trace Log</h3>
-            
+
             {/* Visual Pipeline */}
             <AgentPipelineVisualizer trace={report.trace} />
 
             <div className="relative border-l border-slate-150 pl-5 ml-2.5 space-y-5 text-xs">
               {report.trace?.map((entry: any, i: number) => {
                 const icon = getAgentIcon(entry.agent_name);
-                const duration = getAgentDuration(entry.agent_name);
-                
+
                 let cardBorder = 'border-slate-100 bg-slate-50/40';
                 let statusBadge = 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
@@ -585,14 +596,14 @@ export const ResultsPage: React.FC = () => {
                     <div className="absolute -left-7.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm ring-4 ring-white">
                       <span className="text-[10px]">{icon}</span>
                     </div>
-                    
-                    <div className={`space-y-1.5 border rounded-xl p-3.5 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 ${cardBorder}`}>
+
+                    <div className={`space-y-1.5 border rounded-xl p-3.5 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 {cardBorder}`}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="font-extrabold text-slate-800 text-sm">
                             {entry.agent_name}
                           </span>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold border uppercase tracking-wider ${statusBadge}`}>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold border uppercase tracking-wider {statusBadge}`}>
                             {entry.status}
                           </span>
                         </div>
@@ -600,12 +611,9 @@ export const ResultsPage: React.FC = () => {
                           <span>
                             {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                           </span>
-                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-bold">
-                            ⏱️ {duration}
-                          </span>
                         </div>
                       </div>
-                      
+
                       <p className="text-slate-550 leading-relaxed font-medium text-[11px] mt-1.5">
                         {entry.message}
                       </p>
@@ -622,7 +630,7 @@ export const ResultsPage: React.FC = () => {
           {/* Audio stream briefings summary briefing streamer card */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Briefing Audio Streamer</h3>
-            
+
             <div className="rounded-xl border border-slate-150 p-4.5 bg-slate-50/50 text-center shadow-sm">
               <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-blue-50 text-blue-600 mb-2.5 shadow-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5.5 w-5.5">
@@ -630,13 +638,13 @@ export const ResultsPage: React.FC = () => {
                 </svg>
               </div>
               <span className="text-xs font-bold text-slate-800">TTS Audio Adjudication Briefing</span>
-              <p className="text-[10px] text-slate-400 mt-1.5 font-semibold">Duration: {report.audio_briefing?.estimated_duration_seconds || '78.5'}s</p>
+              <p className="text-[10px] text-slate-400 mt-1.5 font-semibold">Duration: {report.audio_briefing?.estimated_duration_seconds}s</p>
 
               <button
                 type="button"
                 className="mt-3.5 rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors w-full cursor-pointer"
               >
-                Play Audio Briefing (Demo Only)
+                Play Audio Briefing
               </button>
             </div>
 

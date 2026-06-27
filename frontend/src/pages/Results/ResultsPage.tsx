@@ -4,6 +4,7 @@ import { PageContainer } from '../../components/layout/PageContainer';
 import { ApiService } from '../../services/api';
 
 // Cost Flow Visualizer Component (SVG Adjudication Chain)
+// Cost Flow Visualizer Component (SVG Adjudication Chain)
 const CostFlowVisualizer: React.FC<{
   billed: number;
   primaryPaid: number;
@@ -12,6 +13,8 @@ const CostFlowVisualizer: React.FC<{
   primaryInsurer: string;
   secondaryInsurer: string;
 }> = ({ billed, primaryPaid, secondaryPaid, patientOwes, primaryInsurer, secondaryInsurer }) => {
+  const hasSecondary = !!secondaryInsurer && secondaryInsurer.trim() !== "";
+
   return (
     <div className="flex flex-col items-center py-8 bg-slate-50/50 rounded-2xl border border-slate-200/80 shadow-inner">
       {/* Node: Provider */}
@@ -56,56 +59,82 @@ const CostFlowVisualizer: React.FC<{
         </div>
       </div>
 
-      {/* Connector 2: Primary -> Secondary */}
-      <div className="flex flex-col items-center my-1.5">
-        <svg width="200" height="75" className="overflow-visible">
-          <defs>
-            <linearGradient id="grad2" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#10b981" />
-              <stop offset="100%" stopColor="#6366f1" />
-            </linearGradient>
-            <marker id="arrow-indigo" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
-            </marker>
-          </defs>
-          <path d="M 100 0 L 100 65" stroke="url(#grad2)" strokeWidth="3" markerEnd="url(#arrow-indigo)" strokeDasharray="4 2" />
-          <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
-          <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
-            Paid: {primaryPaid.toFixed(2)}
-          </text>
-        </svg>
-      </div>
+      {hasSecondary ? (
+        <>
+          {/* Connector 2: Primary -> Secondary */}
+          <div className="flex flex-col items-center my-1.5">
+            <svg width="200" height="75" className="overflow-visible">
+              <defs>
+                <linearGradient id="grad2" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#6366f1" />
+                </linearGradient>
+                <marker id="arrow-indigo" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
+                </marker>
+              </defs>
+              <path d="M 100 0 L 100 65" stroke="url(#grad2)" strokeWidth="3" markerEnd="url(#arrow-indigo)" strokeDasharray="4 2" />
+              <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
+              <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
+                Paid: {primaryPaid.toFixed(2)}
+              </text>
+            </svg>
+          </div>
 
-      {/* Node: Secondary Insurer */}
-      <div className="flex items-center gap-3 bg-white px-5 py-4 rounded-xl border border-indigo-150 shadow-sm w-64 hover:translate-y-[-2px] transition-transform duration-200 ring-1 ring-indigo-500/10">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 text-lg shadow-sm">
-          🛡️
-        </div>
-        <div>
-          <h4 className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Secondary Insurer</h4>
-          <p className="text-sm font-extrabold text-slate-800">{secondaryInsurer || 'Secondary Plan'}</p>
-        </div>
-      </div>
+          {/* Node: Secondary Insurer */}
+          <div className="flex items-center gap-3 bg-white px-5 py-4 rounded-xl border border-indigo-150 shadow-sm w-64 hover:translate-y-[-2px] transition-transform duration-200 ring-1 ring-indigo-500/10">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 text-lg shadow-sm">
+              🛡️
+            </div>
+            <div>
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Secondary Insurer</h4>
+              <p className="text-sm font-extrabold text-slate-800">{secondaryInsurer}</p>
+            </div>
+          </div>
 
-      {/* Connector 3: Secondary -> Patient */}
-      <div className="flex flex-col items-center my-1.5">
-        <svg width="200" height="75" className="overflow-visible">
-          <defs>
-            <linearGradient id="grad3" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#6366f1" />
-              <stop offset="100%" stopColor="#f59e0b" />
-            </linearGradient>
-            <marker id="arrow-amber" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
-            </marker>
-          </defs>
-          <path d="M 100 0 L 100 65" stroke="url(#grad3)" strokeWidth="3" markerEnd="url(#arrow-amber)" strokeDasharray="4 2" />
-          <rect x="35" y="18" width="130" height="28" rx="6" fill="#e0e7ff" stroke="#c7d2fe" strokeWidth="1" className="shadow-sm" />
-          <text x="100" y="36" textAnchor="middle" fill="#3730a3" className="text-xs font-bold font-mono">
-            Paid: {secondaryPaid.toFixed(2)}
-          </text>
-        </svg>
-      </div>
+          {/* Connector 3: Secondary -> Patient */}
+          <div className="flex flex-col items-center my-1.5">
+            <svg width="200" height="75" className="overflow-visible">
+              <defs>
+                <linearGradient id="grad3" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#6366f1" />
+                  <stop offset="100%" stopColor="#f59e0b" />
+                </linearGradient>
+                <marker id="arrow-amber" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
+                </marker>
+              </defs>
+              <path d="M 100 0 L 100 65" stroke="url(#grad3)" strokeWidth="3" markerEnd="url(#arrow-amber)" strokeDasharray="4 2" />
+              <rect x="35" y="18" width="130" height="28" rx="6" fill="#e0e7ff" stroke="#c7d2fe" strokeWidth="1" className="shadow-sm" />
+              <text x="100" y="36" textAnchor="middle" fill="#3730a3" className="text-xs font-bold font-mono">
+                Paid: {secondaryPaid.toFixed(2)}
+              </text>
+            </svg>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Connector 2: Primary -> Patient directly */}
+          <div className="flex flex-col items-center my-1.5">
+            <svg width="200" height="75" className="overflow-visible">
+              <defs>
+                <linearGradient id="gradDirect" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#f59e0b" />
+                </linearGradient>
+                <marker id="arrow-amber-direct" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
+                </marker>
+              </defs>
+              <path d="M 100 0 L 100 65" stroke="url(#gradDirect)" strokeWidth="3" markerEnd="url(#arrow-amber-direct)" strokeDasharray="4 2" />
+              <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
+              <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
+                Paid: {primaryPaid.toFixed(2)}
+              </text>
+            </svg>
+          </div>
+        </>
+      )}
 
       {/* Node: Patient */}
       <div className="flex items-center gap-3 bg-white px-5 py-4 rounded-xl border border-amber-150 shadow-sm w-64 hover:translate-y-[-2px] transition-transform duration-200 ring-1 ring-amber-500/10">
@@ -274,6 +303,29 @@ export const ResultsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [failedStep, setFailedStep] = useState<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+
+  const togglePlayAudio = () => {
+    if (isPlayingAudio) {
+      window.speechSynthesis.cancel();
+      setIsPlayingAudio(false);
+    } else {
+      if (report?.audio_briefing?.full_narration) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(report.audio_briefing.full_narration);
+        utterance.onend = () => setIsPlayingAudio(false);
+        utterance.onerror = () => setIsPlayingAudio(false);
+        setIsPlayingAudio(true);
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, []);
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -642,9 +694,14 @@ export const ResultsPage: React.FC = () => {
 
               <button
                 type="button"
-                className="mt-3.5 rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors w-full cursor-pointer"
+                onClick={togglePlayAudio}
+                className={`mt-3.5 rounded-lg border px-4 py-1.5 text-xs font-bold transition-colors w-full cursor-pointer ${
+                  isPlayingAudio
+                    ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                Play Audio Briefing
+                {isPlayingAudio ? '⏹️ Stop Audio Briefing' : '🔊 Play Audio Briefing'}
               </button>
             </div>
 
@@ -653,8 +710,7 @@ export const ResultsPage: React.FC = () => {
               <div className="mt-6 border-t border-slate-150 pt-5">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-450 mb-3 flex items-center justify-between">
                   <span>Patient Briefing Script</span>
-                  <span className="text-[9px] font-semibold text-blue-650 bg-blue-50 px-1.5 py-0.5 rounded">Future TTS Ready</span>
-                </h4>
+                  <span className="text-[9px] font-semibold text-emerald-650 bg-emerald-50 px-1.5 py-0.5 rounded">TTS Enabled</span></h4>
                 <div className="space-y-3.5 text-xs">
                   {report.audio_briefing.sections.map((section: any, idx: number) => (
                     <div key={idx} className="bg-slate-50/50 rounded-xl p-3 border border-slate-100">

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict
 from google import genai
 from google.genai import types
+from pypdf import PdfReader
 
 from app.schemas.intake import DocumentType
 from app.schemas.document_intelligence import ProcessedDocument
@@ -56,7 +57,6 @@ class PDFProcessor(DocumentProcessor):
         logger.info(f"PDFProcessor parsing PDF document {file_path}")
 
         try:
-            from pypdf import PdfReader
             reader = PdfReader(file_path)
             page_count = len(reader.pages)
             text_list = []

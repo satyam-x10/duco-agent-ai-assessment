@@ -84,8 +84,25 @@ async def test_reviewer_agent_low_confidence():
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_orchestration_pipeline(tmp_path):
+@patch("services.medical_coding.genai.Client")
+async def test_end_to_end_orchestration_pipeline(mock_client_class, tmp_path):
     """Verify end-to-end multi-agent execution sequencing and state mutation using mock services."""
+    import json
+    
+    # Mock Gemini API Response for Medical Coding
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "diagnoses": [
+            {"code": "M23.231", "description": "Tear of medial meniscus", "confidence": 0.96}
+        ],
+        "procedures": [
+            {"code": "97161", "description": "Physical therapy evaluation", "confidence": 0.98}
+        ]
+    })
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    mock_client_class.return_value = mock_client
+
     # Write mock files on disk to pass Path.exists() check
     invoice_path = tmp_path / "invoice.txt"
     invoice_path.write_text("Patient Name: Priya Sen\nProcedure code is 97161. Total PT Evaluation.")
@@ -131,9 +148,6 @@ async def test_end_to_end_orchestration_pipeline(tmp_path):
         return transcript_path
 
     storage_service.get_file_path = AsyncMock(side_effect=mock_get_file_path)
-    
-    # Run the real coding logic, but mock LLM calls by letting it fall back to simulate
-    # which is already built-in to the services! This allows us to run integration test without live API.
     
     # Build Orchestrator
     intake_agent = IntakeAgent(storage_service)

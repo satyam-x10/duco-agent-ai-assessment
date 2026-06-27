@@ -14,8 +14,13 @@ from app.schemas.finance_engine import FinancialReport
 
 logger = logging.getLogger(__name__)
 
+class FatalBusinessError(Exception):
+    """Exception raised for permanent business logic failures that should never be retried."""
+    pass
+
+
 # Error types that represent permanent business logic failures — never retry these.
-BUSINESS_ERROR_TYPES = (ValueError, RuntimeError)
+BUSINESS_ERROR_TYPES = (FatalBusinessError, RuntimeError)
 
 
 class TraceEntry(BaseModel):
@@ -60,7 +65,8 @@ class Orchestrator:
     """Orchestrates agent-to-agent sequencing, workflow state handoff, error tracing, and retries."""
 
     def __init__(self, agents: List[Agent]):
-        self.agents = agents
+        self.agents_list = agents
+        self.agents_dict = {agent.name: agent for agent in agents}
         # Optional callback invoked after each agent completes successfully
         self._on_agent_complete: Optional[Callable[[str, int], Awaitable[None]]] = None
 
@@ -68,17 +74,55 @@ class Orchestrator:
         """Register an async callback that receives (agent_name, progress_percent) on success."""
         self._on_agent_complete = callback
 
-    async def execute(self, state: SharedWorkflowState, max_retries: int = 1) -> None:
-        """Runs the complete sequence of specialist agents, managing retries and tracing.
+    def _evaluate_next_step(self, state: SharedWorkflowState, completed_agents: set) -> tuple:
+        """Dynamic planner determining which agent to run next and the reasoning why."""
+        # 1. Verification of intake
+        if "IntakeAgent" not in completed_agents:
+            return "IntakeAgent", "Intake verification is required to validate that raw files are loaded into storage slots."
 
-        Business errors (ValueError, RuntimeError) are treated as permanent failures — pipeline
-        stops immediately with no retry. Transient I/O errors (IOError, OSError) are retried up
-        to max_retries times.
+        # 2. Extracting texts (DocIntel)
+        if "DocIntelAgent" not in completed_agents or not state.processed_documents:
+            return "DocIntelAgent", "Raw documents are loaded. DocIntelAgent must perform OCR text extraction on the uploaded PDF/images."
+
+        # 3. Medical Coding
+        if "MedicalCodingAgent" not in completed_agents or not state.coding_result:
+            return "MedicalCodingAgent", "Clinical text is extracted. MedicalCodingAgent must analyze the text to infer ICD-10 diagnoses and CPT procedure codes."
+
+        # 4. Resolve Insurance Policies
+        if "InsuranceAgent" not in completed_agents or not state.primary_policy:
+            return "InsuranceAgent", "Clinical codes are ready. InsuranceAgent must load active insurance policies and map coverages matching the patient."
+
+        # 5. COB Coordination
+        if "COBAgent" not in completed_agents or not state.cob_decision:
+            return "COBAgent", "Insurance policies resolved. COBAgent is selected to evaluate Coordination of Benefits rules and assign primary/secondary payer order."
+
+        # 6. Finance Ledger Adjudication
+        if "FinanceAgent" not in completed_agents or not state.financial_report:
+            return "FinanceAgent", "COB decision finalized. FinanceAgent is required to compute the audited financial breakdown (deductibles, coinsurance, OOPM)."
+
+        # 7. Quality Audit (Reviewer)
+        if "ReviewerAgent" not in completed_agents:
+            return "ReviewerAgent", "Financial reports generated. ReviewerAgent is chosen to perform output audits, check clinical code confidence levels, and log warning indicators."
+
+        return None, ""
+
+    async def execute(self, state: SharedWorkflowState, max_retries: int = 1) -> None:
+        """Runs the orchestration pipeline, managing retries and tracing.
+
+        Supports dynamic agentic planning for standard pipelines, and sequential routing
+        for custom test sequences.
         """
         logger.info(f"Starting orchestration pipeline for claim {state.claim_id}")
         state.workflow_status = "running"
 
-        # Progress milestones per agent (percent complete after each agent finishes)
+        # Check if this is the standard production pipeline
+        is_production = len(self.agents_list) == 7 and all(
+            name in self.agents_dict for name in [
+                "IntakeAgent", "DocIntelAgent", "MedicalCodingAgent",
+                "InsuranceAgent", "COBAgent", "FinanceAgent", "ReviewerAgent"
+            ]
+        )
+
         progress_milestones = {
             "IntakeAgent": 15,
             "DocIntelAgent": 35,
@@ -89,81 +133,166 @@ class Orchestrator:
             "ReviewerAgent": 100,
         }
 
-        for agent in self.agents:
-            retry_count = 0
-            success = False
+        if is_production:
+            completed_agents = set()
+            step_count = 0
+            max_steps = 15
 
-            while not success:
-                logger.info(f"Executing agent {agent.name} (Attempt {retry_count + 1})")
-                try:
-                    await agent.execute(state)
+            while state.workflow_status == "running" and step_count < max_steps:
+                step_count += 1
+                next_agent_name, reasoning = self._evaluate_next_step(state, completed_agents)
 
-                    # Log success trace entry
-                    state.trace.append(
-                        TraceEntry(
-                            agent_name=agent.name,
-                            status="success",
-                            message=f"Agent {agent.name} completed successfully."
-                        )
-                    )
-                    success = True
+                if not next_agent_name:
+                    logger.info("Agentic planner completed successfully.")
+                    state.workflow_status = "success"
+                    break
 
-                    # Fire progress callback if registered
-                    if self._on_agent_complete:
-                        progress = progress_milestones.get(agent.name, 50)
-                        try:
-                            await self._on_agent_complete(agent.name, progress)
-                        except Exception as cb_err:
-                            logger.warning(f"Progress callback error: {cb_err}")
+                agent = self.agents_dict.get(next_agent_name)
+                logger.info(f"Agentic Planner chose {next_agent_name}. Reason: {reasoning}")
 
-                except BUSINESS_ERROR_TYPES as e:
-                    # Business/logic error — do NOT retry, stop immediately
-                    error_msg = str(e)
-                    logger.error(f"Business error in agent {agent.name}: {error_msg}")
-                    state.trace.append(
-                        TraceEntry(
-                            agent_name=agent.name,
-                            status="error",
-                            message=f"Fatal business error: {error_msg}"
-                        )
-                    )
-                    state.errors.append(error_msg)
-                    state.workflow_status = "failed"
-                    state.failed_agent = agent.name
-                    state.failure_reason = error_msg
-                    raise RuntimeError(
-                        f"Pipeline stopped: {agent.name} encountered a business error: {error_msg}"
-                    ) from e
+                retry_count = 0
+                success = False
 
-                except Exception as e:
-                    # Potentially transient error — retry up to max_retries
-                    retry_count += 1
-                    error_msg = str(e)
-                    logger.warning(f"Transient error in agent {agent.name} (Attempt {retry_count}): {error_msg}")
-
-                    if retry_count <= max_retries:
+                while not success:
+                    try:
+                        await agent.execute(state)
                         state.trace.append(
                             TraceEntry(
                                 agent_name=agent.name,
-                                status="retry",
-                                message=f"Transient failure: {error_msg}. Retrying (attempt {retry_count})..."
+                                status="success",
+                                message=f"{reasoning} Status: Success."
                             )
                         )
-                    else:
-                        # Exhausted retries
-                        fatal_msg = f"Agent {agent.name} failed after {retry_count} attempts: {error_msg}"
+                        completed_agents.add(agent.name)
+                        success = True
+
+                        if self._on_agent_complete:
+                            progress = progress_milestones.get(agent.name, 50)
+                            try:
+                                await self._on_agent_complete(agent.name, progress)
+                            except Exception as cb_err:
+                                logger.warning(f"Progress callback error: {cb_err}")
+
+                    except BUSINESS_ERROR_TYPES as e:
+                        error_msg = str(e)
+                        logger.error(f"Business error in agent {agent.name}: {error_msg}")
                         state.trace.append(
                             TraceEntry(
                                 agent_name=agent.name,
                                 status="error",
-                                message=fatal_msg
+                                message=f"Fatal business error: {error_msg}"
                             )
                         )
-                        state.errors.append(fatal_msg)
+                        state.errors.append(error_msg)
                         state.workflow_status = "failed"
                         state.failed_agent = agent.name
-                        state.failure_reason = fatal_msg
-                        raise RuntimeError(fatal_msg) from e
+                        state.failure_reason = error_msg
+                        raise RuntimeError(
+                            f"Pipeline stopped: {agent.name} encountered a business error: {error_msg}"
+                        ) from e
 
-        state.workflow_status = "success"
+                    except Exception as e:
+                        retry_count += 1
+                        error_msg = str(e)
+                        logger.warning(f"Transient error in agent {agent.name} (Attempt {retry_count}): {error_msg}")
+
+                        if retry_count <= max_retries:
+                            state.trace.append(
+                                TraceEntry(
+                                    agent_name=agent.name,
+                                    status="retry",
+                                    message=f"Transient failure: {error_msg}. Retrying (attempt {retry_count})..."
+                                )
+                            )
+                        else:
+                            fatal_msg = f"Agent {agent.name} failed after {retry_count} attempts: {error_msg}"
+                            state.trace.append(
+                                TraceEntry(
+                                    agent_name=agent.name,
+                                    status="error",
+                                    message=fatal_msg
+                                )
+                            )
+                            state.errors.append(fatal_msg)
+                            state.workflow_status = "failed"
+                            state.failed_agent = agent.name
+                            state.failure_reason = fatal_msg
+                            raise RuntimeError(fatal_msg) from e
+
+            if state.workflow_status == "running":
+                state.workflow_status = "success"
+        else:
+            # Fallback for custom test sequences
+            for agent in self.agents_list:
+                retry_count = 0
+                success = False
+
+                while not success:
+                    logger.info(f"Executing agent {agent.name} (Attempt {retry_count + 1})")
+                    try:
+                        await agent.execute(state)
+                        state.trace.append(
+                            TraceEntry(
+                                agent_name=agent.name,
+                                status="success",
+                                message=f"Agent {agent.name} completed successfully."
+                            )
+                        )
+                        success = True
+
+                        if self._on_agent_complete:
+                            progress = progress_milestones.get(agent.name, 50)
+                            try:
+                                await self._on_agent_complete(agent.name, progress)
+                            except Exception as cb_err:
+                                logger.warning(f"Progress callback error: {cb_err}")
+
+                    except BUSINESS_ERROR_TYPES as e:
+                        error_msg = str(e)
+                        logger.error(f"Business error in agent {agent.name}: {error_msg}")
+                        state.trace.append(
+                            TraceEntry(
+                                agent_name=agent.name,
+                                status="error",
+                                message=f"Fatal business error: {error_msg}"
+                            )
+                        )
+                        state.errors.append(error_msg)
+                        state.workflow_status = "failed"
+                        state.failed_agent = agent.name
+                        state.failure_reason = error_msg
+                        raise RuntimeError(
+                            f"Pipeline stopped: {agent.name} encountered a business error: {error_msg}"
+                        ) from e
+
+                    except Exception as e:
+                        retry_count += 1
+                        error_msg = str(e)
+                        logger.warning(f"Transient error in agent {agent.name} (Attempt {retry_count}): {error_msg}")
+
+                        if retry_count <= max_retries:
+                            state.trace.append(
+                                TraceEntry(
+                                    agent_name=agent.name,
+                                    status="retry",
+                                    message=f"Transient failure: {error_msg}. Retrying (attempt {retry_count})...."
+                                )
+                            )
+                        else:
+                            fatal_msg = f"Agent {agent.name} failed after {retry_count} attempts: {error_msg}"
+                            state.trace.append(
+                                TraceEntry(
+                                    agent_name=agent.name,
+                                    status="error",
+                                    message=fatal_msg
+                                )
+                            )
+                            state.errors.append(fatal_msg)
+                            state.workflow_status = "failed"
+                            state.failed_agent = agent.name
+                            state.failure_reason = fatal_msg
+                            raise RuntimeError(fatal_msg) from e
+
+            state.workflow_status = "success"
+        logger.info(f"Orchestration pipeline completed successfully for claim {state.claim_id}")
         logger.info(f"Orchestration pipeline completed successfully for claim {state.claim_id}")

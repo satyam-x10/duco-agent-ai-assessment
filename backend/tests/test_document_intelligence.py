@@ -134,11 +134,9 @@ async def test_image_processor_no_api_key(monkeypatch):
         
     try:
         processor = ImageProcessor()
-        processed = await processor.process(tmp_path, DocumentType.AARAV_MRI_REPORT)
-        
-        assert "Metro Imaging" in processed.extracted_text
-        assert processed.confidence == 0.96
-        assert processed.metadata["ocr_method"] == "GeminiVisionMockFallback"
+        with pytest.raises(RuntimeError) as exc_info:
+            await processor.process(tmp_path, DocumentType.AARAV_MRI_REPORT)
+        assert "requires Gemini Vision OCR, but GEMINI_API_KEY is not configured" in str(exc_info.value)
     finally:
         if tmp_path.exists():
             tmp_path.unlink()

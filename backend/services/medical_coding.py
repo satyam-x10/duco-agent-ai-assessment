@@ -64,6 +64,13 @@ class MedicalCodingService:
                 procedures=validated.procedures,
                 raw_response=raw_text,
             )
+        except json.JSONDecodeError as json_err:
+            logger.warning(f"Gemini returned invalid JSON: {raw_text if 'raw_text' in locals() else 'None'}. Error: {json_err}")
+            return CodingResult(
+                diagnoses=[],
+                procedures=[],
+                raw_response=f"Inference failure (JSONDecodeError): {str(json_err)}"
+            )
         except RuntimeError:
             raise
         except Exception as e:

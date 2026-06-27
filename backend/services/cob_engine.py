@@ -186,6 +186,15 @@ class COBEngine:
                     pri_paid = subject_to_coins * (1.0 - pri_coins_rate)
                     pri_patient_resp = pri_ded_applied + pri_coins_amt
 
+                    # Apply primary Out-of-Pocket Maximum (OOPM) cap
+                    rem_oopm = primary_policy.remaining_out_of_pocket_max
+                    if pri_patient_resp > rem_oopm:
+                        excess = pri_patient_resp - rem_oopm
+                        pri_patient_resp = rem_oopm
+                        pri_paid += excess
+                        pri_coins_amt = max(0.0, pri_patient_resp - pri_ded_applied)
+                    primary_policy.remaining_out_of_pocket_max = max(0.0, rem_oopm - pri_patient_resp)
+
             primary_coverage = PrimaryCoverage(
                 policy_id=primary_policy.policy_id if primary_policy else "",
                 is_covered=is_pri_covered,
@@ -231,6 +240,15 @@ class COBEngine:
                     sec_ded_applied = sec_ded_satisfied
                     sec_coins_amt = max(0.0, pri_patient_resp - sec_paid - sec_ded_applied)
                     sec_patient_resp = pri_patient_resp - sec_paid
+
+                    # Apply secondary out-of-pocket maximum
+                    sec_oopm = secondary_policy.remaining_out_of_pocket_max
+                    if sec_patient_resp > sec_oopm:
+                        excess = sec_patient_resp - sec_oopm
+                        sec_patient_resp = sec_oopm
+                        sec_paid += excess
+                        sec_coins_amt = max(0.0, sec_patient_resp - sec_ded_applied)
+                    secondary_policy.remaining_out_of_pocket_max = max(0.0, sec_oopm - sec_patient_resp)
                     
                     notes_msg = (
                         f"Primary paid {pri_paid:.2f} (Deductible: {pri_ded_applied:.2f}, Coinsurance: {pri_coins_amt:.2f}). "
@@ -254,6 +272,15 @@ class COBEngine:
                     sec_coins_amt = subject_to_coins * sec_coins_rate
                     sec_paid = subject_to_coins * (1.0 - sec_coins_rate)
                     sec_patient_resp = sec_ded_applied + sec_coins_amt
+
+                    # Apply secondary out-of-pocket maximum
+                    sec_oopm = secondary_policy.remaining_out_of_pocket_max
+                    if sec_patient_resp > sec_oopm:
+                        excess = sec_patient_resp - sec_oopm
+                        sec_patient_resp = sec_oopm
+                        sec_paid += excess
+                        sec_coins_amt = max(0.0, sec_patient_resp - sec_ded_applied)
+                    secondary_policy.remaining_out_of_pocket_max = max(0.0, sec_oopm - sec_patient_resp)
                     
                     notes_msg = f"Procedure excluded by primary. Secondary processed as primary, paying {sec_paid:.2f}."
                 else:

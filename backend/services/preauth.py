@@ -57,6 +57,30 @@ class PreAuthorizationService:
     """Service responsible for generating professional pre-authorization request letters from claims details."""
 
     def generate_letters(self, state: SharedWorkflowState) -> PreAuthResponse:
+        # Check if any procedure requires pre-authorization
+        any_requires_preauth = False
+        procedures = state.coding_result.procedures if state.coding_result else []
+        policies = []
+        if state.primary_policy:
+            policies.append(state.primary_policy)
+        if state.secondary_policy:
+            policies.append(state.secondary_policy)
+            
+        for policy in policies:
+            for proc in procedures:
+                for rule in policy.coverage_rules:
+                    if rule.cpt_code == proc.code and rule.requires_preauth:
+                        any_requires_preauth = True
+                        break
+                if any_requires_preauth:
+                    break
+            if any_requires_preauth:
+                break
+                
+        if not any_requires_preauth:
+            logger.info("No procedure requires pre-authorization. Skipping letter generation.")
+            return PreAuthResponse(claim_id=state.claim_id, letters=[])
+
         logger.info(f"Generating pre-authorization letters for claim {state.claim_id}")
 
         patient_name = "Priya Sen"

@@ -20,7 +20,12 @@ def test_reports_summary_fallback(client):
     
     state = SharedWorkflowState(claim_id="CLAIM-MOCK", member_id="98765")
     state.workflow_status = "success"
-    state.coding_result = CodingResult(diagnoses=[], procedures=[])
+    from app.schemas.medical_coding import Procedure, Diagnosis
+    from app.schemas.insurance_engine import CoverageRule
+    state.coding_result = CodingResult(
+        diagnoses=[Diagnosis(code="M23.231", description="Meniscus tear", confidence=0.95)],
+        procedures=[Procedure(code="29881", description="Arthroscopy knee", confidence=0.95)]
+    )
     state.primary_policy = InsurancePolicy(
         policy_id="BS-120-BLUE",
         provider_name="BlueShield Cross",
@@ -39,7 +44,9 @@ def test_reports_summary_fallback(client):
                 date_of_birth="1985-04-12"
             )
         ],
-        coverage_rules=[]
+        coverage_rules=[
+            CoverageRule(cpt_code="29881", is_covered=True, requires_preauth=True)
+        ]
     )
     state.cob_decision = COBDecision(
         claim_id="CLAIM-MOCK",

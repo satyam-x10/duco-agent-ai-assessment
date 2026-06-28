@@ -17,7 +17,7 @@ class DocumentProcessor(ABC):
     """Abstract class establishing the parsing contract for document processors."""
 
     @abstractmethod
-    async def process(self, file_path: Path, document_type: DocumentType) -> ProcessedDocument:
+    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
         """Parses the document at file_path and constructs a structured ProcessedDocument."""
         pass
 
@@ -25,7 +25,7 @@ class DocumentProcessor(ABC):
 class TextProcessor(DocumentProcessor):
     """Concrete processor responsible for extracting raw unicode text files."""
 
-    async def process(self, file_path: Path, document_type: DocumentType) -> ProcessedDocument:
+    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
         logger.info(f"TextProcessor reading file {file_path}")
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -53,8 +53,8 @@ class TextProcessor(DocumentProcessor):
 class PDFProcessor(DocumentProcessor):
     """Concrete processor responsible for parsing PDF documents."""
 
-    async def process(self, file_path: Path, document_type: DocumentType) -> ProcessedDocument:
-        logger.info(f"PDFProcessor parsing PDF document {file_path}")
+    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
+        logger.info(f"PDFProcessor parsing PDF document {file_path} with strategy {strategy}")
 
         try:
             reader = PdfReader(file_path)
@@ -67,12 +67,12 @@ class PDFProcessor(DocumentProcessor):
 
             extracted_text = "\n".join(text_list)
 
-            # Fall back to OCR if no text was found (scanned PDF)
-            if not extracted_text.strip():
-                logger.info(f"PDF {file_path.name} contains no extractable text. Attempting Gemini Vision OCR.")
-                extracted_text = await self._ocr_with_gemini(file_path)
-                confidence = 0.90
-                parser_name = "PDFProcessor (Gemini OCR)"
+            # Fall back to OCR if no text was found (scanned PDF) or if high-fidelity is requested
+            if not extracted_text.strip() or strategy == "high_fidelity":
+                logger.info(f"PDF {file_path.name} contains no extractable text or requested high-fidelity. Attempting Gemini Vision OCR.")
+                extracted_text = await self._ocr_with_gemini(file_path, strategy=strategy)
+                confidence = 0.99 if strategy == "high_fidelity" else 0.90
+                parser_name = "PDFProcessor (Gemini OCR - High Fidelity)" if strategy == "high_fidelity" else "PDFProcessor (Gemini OCR)"
             else:
                 confidence = 0.99
                 parser_name = "PDFProcessor"
@@ -85,7 +85,8 @@ class PDFProcessor(DocumentProcessor):
                 metadata={
                     "parser": parser_name,
                     "page_count_resolved": page_count,
-                    "file_path": str(file_path)
+                    "file_path": str(file_path),
+                    "strategy": strategy
                 }
             )
         except (IOError, RuntimeError, ValueError):
@@ -94,7 +95,7 @@ class PDFProcessor(DocumentProcessor):
             logger.error(f"Failed to parse PDF document: {e}")
             raise IOError(f"Failed to parse PDF document '{file_path.name}': {str(e)}")
 
-    async def _ocr_with_gemini(self, file_path: Path) -> str:
+    async def _ocr_with_gemini(self, file_path: Path, strategy: str = "standard") -> str:
         """Performs Gemini Vision OCR on a scanned PDF. Raises on failure."""
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -106,6 +107,13 @@ class PDFProcessor(DocumentProcessor):
             client = genai.Client(api_key=api_key)
 
             logger.info(f"[Gemini OCR] Calling Gemini Vision API on {file_path.name}")
+            prompt = "Perform OCR on this scanned medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
+            if strategy == "high_fidelity":
+                prompt = (
+                    "PERFORM DEEP OCR AUDIT AND EXTRACTION. Look extremely closely at all handwritten notes, structured tables, "
+                    "mismatches, dates, insurance plan IDs, member names, and codes. Double check each digit and character. "
+                    "Transcribe all text with highest possible fidelity, preserving the tabular structure where relevant."
+                )
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=[
@@ -113,7 +121,7 @@ class PDFProcessor(DocumentProcessor):
                         data=file_path.read_bytes(),
                         mime_type="application/pdf",
                     ),
-                    "Perform OCR on this scanned medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
+                    prompt
                 ]
             )
             text = response.text
@@ -130,8 +138,8 @@ class PDFProcessor(DocumentProcessor):
 class ImageProcessor(DocumentProcessor):
     """Concrete processor parsing image formats. Uses Gemini Vision OCR API."""
 
-    async def process(self, file_path: Path, document_type: DocumentType) -> ProcessedDocument:
-        logger.info(f"ImageProcessor executing OCR on image {file_path}")
+    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
+        logger.info(f"ImageProcessor executing OCR on image {file_path} with strategy {strategy}")
 
         api_key = os.environ.get("GEMINI_API_KEY")
         print(f"API KEY was {api_key}")
@@ -148,6 +156,13 @@ class ImageProcessor(DocumentProcessor):
             client = genai.Client(api_key=api_key)
 
             logger.info(f"[Gemini Vision OCR] Calling Gemini API on {file_path.name}")
+            prompt = "Perform OCR on this medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
+            if strategy == "high_fidelity":
+                prompt = (
+                    "PERFORM DEEP OCR AUDIT AND EXTRACTION. Look extremely closely at all handwritten notes, structured tables, "
+                    "mismatches, dates, insurance plan IDs, member names, and codes. Double check each digit and character. "
+                    "Transcribe all text with highest possible fidelity, preserving the tabular structure where relevant."
+                )
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=[
@@ -155,7 +170,7 @@ class ImageProcessor(DocumentProcessor):
                         data=file_path.read_bytes(),
                         mime_type=mime_type,
                     ),
-                    "Perform OCR on this medical/estimate document. Return only the extracted text exactly as it appears. If it is handwritten or structured, extract it as accurately as possible."
+                    prompt
                 ]
             )
             extracted_text = response.text
@@ -172,11 +187,12 @@ class ImageProcessor(DocumentProcessor):
             document_type=document_type,
             extracted_text=extracted_text,
             page_count=1,
-            confidence=0.98,
+            confidence=0.99 if strategy == "high_fidelity" else 0.98,
             metadata={
                 "parser": "ImageProcessor",
-                "ocr_method": "GeminiVisionOCR",
-                "file_path": str(file_path)
+                "ocr_method": "GeminiVisionOCR (High Fidelity)" if strategy == "high_fidelity" else "GeminiVisionOCR",
+                "file_path": str(file_path),
+                "strategy": strategy
             }
         )
 
@@ -207,10 +223,10 @@ class DocumentIntelligenceService:
     def __init__(self, factory: DocumentProcessorFactory):
         self.factory = factory
 
-    async def process_document(self, file_path: Path, document_type: DocumentType) -> ProcessedDocument:
+    async def process_document(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
         if not file_path.exists():
             raise FileNotFoundError(f"Document file does not exist at path '{file_path}'.")
 
         processor = self.factory.get_processor(file_path)
-        logger.info(f"Executing document intelligence pipeline on '{file_path.name}' for slot '{document_type.value}'")
-        return await processor.process(file_path, document_type)
+        logger.info(f"Executing document intelligence pipeline on '{file_path.name}' for slot '{document_type.value}' with strategy '{strategy}'")
+        return await processor.process(file_path, document_type, strategy=strategy)

@@ -45,8 +45,56 @@ class ReviewerAgent(Agent):
         if not state.financial_report.secondary_policy_id:
             state.warnings.append("Note: Claim processed under single coverage; no secondary insurance resolved.")
             
-        # Check if manual human approval is required due to low confidence warnings
-        if any("Low confidence" in w for w in state.warnings):
+        # 5. Audit Logical Inconsistencies (Rule 5)
+        # A. Patient name mismatch between policy subscriber and clinical records
+        p_member = None
+        if state.primary_policy:
+            for m in state.primary_policy.members:
+                if m.member_id == state.member_id:
+                    p_member = m
+                    break
+            
+            if p_member:
+                name_found = False
+                for doc in state.processed_documents.values():
+                    if p_member.first_name.lower() in doc.extracted_text.lower() or p_member.last_name.lower() in doc.extracted_text.lower():
+                        name_found = True
+                        break
+                if not name_found:
+                    state.warnings.append(f"[Policy Inconsistency] Resolved patient name '{p_member.first_name} {p_member.last_name}' does not appear in any extracted clinical texts.")
+
+        # B. Name mismatch between primary and secondary policies
+        if state.primary_policy and state.secondary_policy and p_member:
+            s_member = None
+            for m in state.secondary_policy.members:
+                if m.date_of_birth == p_member.date_of_birth:
+                    s_member = m
+                    break
+            if s_member and (s_member.first_name.lower() != p_member.first_name.lower() or s_member.last_name.lower() != p_member.last_name.lower()):
+                state.warnings.append(f"[Policy Inconsistency] Patient name mismatch between insurers. Primary: {p_member.first_name} {p_member.last_name}, Secondary: {s_member.first_name} {s_member.last_name}")
+
+        # C. Procedure-coverage or supporting diagnosis mismatch
+        if state.coding_result:
+            procedures = state.coding_result.procedures
+            diagnoses = state.coding_result.diagnoses
+            
+            # Mapped CPT not covered under primary policy
+            if state.primary_policy:
+                for proc in procedures:
+                    covered = False
+                    for rule in state.primary_policy.coverage_rules:
+                        if rule.cpt_code == proc.code:
+                            covered = rule.is_covered
+                            break
+                    if not covered:
+                        state.warnings.append(f"[Coding Inconsistency] Extracted procedure {proc.code} is NOT covered under primary policy {state.primary_policy.policy_id}.")
+            
+            # Procedures exist without supporting diagnoses
+            if procedures and not diagnoses:
+                state.warnings.append("[Coding Inconsistency] Extracted procedures exist but no supporting clinical diagnosis was coded.")
+            
+        # Check if manual human approval is required due to low confidence warnings or inconsistencies
+        if any("Low confidence" in w or "Inconsistency" in w for w in state.warnings):
             state.requires_human_approval = True
             logger.info(f"{self.name} flagged workflow as requiring manual clinician audit approval.")
             

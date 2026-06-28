@@ -36,6 +36,7 @@ class SharedWorkflowState(BaseModel):
     claim_id: str = Field(..., description="Claim ID associated with the run")
     member_id: str = Field(..., description="Member ID of the patient")
     processed_documents: Dict[DocumentType, ProcessedDocument] = Field(default_factory=dict, description="Extracted texts from document intelligence")
+    ocr_strategies: Dict[DocumentType, str] = Field(default_factory=dict, description="Dynamic extraction strategies resolved for document types")
     coding_result: Optional[CodingResult] = Field(None, description="Extracted clinical diagnosis and procedure codes")
     primary_policy: Optional[InsurancePolicy] = Field(None, description="Resolved primary policy details")
     secondary_policy: Optional[InsurancePolicy] = Field(None, description="Resolved secondary policy details")
@@ -82,11 +83,64 @@ class Orchestrator:
         if "IntakeAgent" not in completed_agents:
             return "IntakeAgent", "Intake verification is required to validate that raw files are loaded into storage slots."
 
-        # 2. Extracting texts (DocIntel)
+        # 2. Extracting texts (DocIntel) - OCR confidence validation (Rule 1)
+        low_confidence_doc = None
+        for doc_type, doc in state.processed_documents.items():
+            if doc.confidence < 0.95 and state.ocr_strategies.get(doc_type) != "high_fidelity":
+                low_confidence_doc = doc_type
+                break
+
+        if low_confidence_doc:
+            logger.warning(f"DocIntelAgent flagged low-confidence OCR ({state.processed_documents[low_confidence_doc].confidence}) for {low_confidence_doc.value}. Backtracking to DocIntelAgent for high-fidelity extraction strategy.")
+            state.trace.append(
+                TraceEntry(
+                    agent_name="Orchestrator",
+                    status="retry",
+                    message=f"Low OCR confidence detected for {low_confidence_doc.value}. Backtracking to DocIntelAgent with high-fidelity strategy."
+                )
+            )
+            # Remove from completed and processed documents to trigger re-run
+            state.processed_documents.pop(low_confidence_doc)
+            state.ocr_strategies[low_confidence_doc] = "high_fidelity"
+            
+            # Reset completed status for downstream agents to force re-planning
+            completed_agents.discard("DocIntelAgent")
+            completed_agents.discard("MedicalCodingAgent")
+            completed_agents.discard("InsuranceAgent")
+            completed_agents.discard("COBAgent")
+            completed_agents.discard("FinanceAgent")
+            completed_agents.discard("ReviewerAgent")
+            return "DocIntelAgent", f"Retrying OCR text extraction with high-fidelity strategy on {low_confidence_doc.value}."
+
         if "DocIntelAgent" not in completed_agents or not state.processed_documents:
             return "DocIntelAgent", "Raw documents are loaded. DocIntelAgent must perform OCR text extraction on the uploaded PDF/images."
 
-        # 3. Medical Coding
+        # 3. Medical Coding - Empty diagnosis handling (Rule 2)
+        if "MedicalCodingAgent" in completed_agents and state.coding_result:
+            if not state.coding_result.diagnoses:
+                coding_runs = sum(1 for entry in state.trace if entry.agent_name == "MedicalCodingAgent")
+                if coding_runs < 2:
+                    logger.warning("No diagnoses extracted by MedicalCodingAgent. Retrying Medical Coding...")
+                    state.trace.append(
+                        TraceEntry(
+                            agent_name="Orchestrator",
+                            status="retry",
+                            message="No diagnoses extracted from clinical documents. Backtracking to MedicalCodingAgent for self-correction."
+                        )
+                    )
+                    state.coding_result = None
+                    completed_agents.discard("MedicalCodingAgent")
+                    completed_agents.discard("InsuranceAgent")
+                    completed_agents.discard("COBAgent")
+                    completed_agents.discard("FinanceAgent")
+                    completed_agents.discard("ReviewerAgent")
+                    return "MedicalCodingAgent", "No diagnoses were extracted. Retrying medical coding with reflection."
+                else:
+                    # Already retried once. Skip remaining agents and request human clarification
+                    logger.info("No diagnoses extracted after retry. Halting pipeline to request clinician clarification.")
+                    state.requires_human_approval = True
+                    return None, "No diagnoses extracted. Halting pipeline for manual clinician clarification."
+
         if "MedicalCodingAgent" not in completed_agents or not state.coding_result:
             return "MedicalCodingAgent", "Clinical text is extracted. MedicalCodingAgent must analyze the text to infer ICD-10 diagnoses and CPT procedure codes."
 
@@ -94,9 +148,35 @@ class Orchestrator:
         if "InsuranceAgent" not in completed_agents or not state.primary_policy:
             return "InsuranceAgent", "Clinical codes are ready. InsuranceAgent must load active insurance policies and map coverages matching the patient."
 
-        # 5. COB Coordination
+        # 5. COB Coordination - Bypass if single policy exists (Rule 3)
         if "COBAgent" not in completed_agents or not state.cob_decision:
-            return "COBAgent", "Insurance policies resolved. COBAgent is selected to evaluate Coordination of Benefits rules and assign primary/secondary payer order."
+            if state.primary_policy and not state.secondary_policy:
+                # Bypass COBAgent! Calculate COB decision directly.
+                logger.info("Only one active insurance policy exists. Bypassing COBAgent.")
+                state.trace.append(
+                    TraceEntry(
+                        agent_name="Orchestrator",
+                        status="success",
+                        message="Single active policy resolved. Bypassing COBAgent execution step."
+                    )
+                )
+                cob_agent = self.agents_dict.get("COBAgent")
+                if cob_agent:
+                    from app.schemas.cob_engine import Claim, ClaimLine
+                    from agents.cob import CPT_BILLED_AMOUNTS
+                    claim_lines = []
+                    for procedure in state.coding_result.procedures:
+                        billed_amount = CPT_BILLED_AMOUNTS.get(procedure.code, 500.00)
+                        claim_lines.append(ClaimLine(cpt_code=procedure.code, billed_amount=billed_amount))
+                    claim = Claim(
+                        claim_id=f"CLAIM-{state.claim_id}",
+                        member_id=state.member_id,
+                        lines=claim_lines
+                    )
+                    state.cob_decision = cob_agent.cob_engine.coordinate_benefits(claim)
+                completed_agents.add("COBAgent")
+            else:
+                return "COBAgent", "Insurance policies resolved. COBAgent is selected to evaluate Coordination of Benefits rules and assign primary/secondary payer order."
 
         # 6. Finance Ledger Adjudication
         if "FinanceAgent" not in completed_agents or not state.financial_report:
@@ -105,6 +185,52 @@ class Orchestrator:
         # 7. Quality Audit (Reviewer)
         if "ReviewerAgent" not in completed_agents:
             return "ReviewerAgent", "Financial reports generated. ReviewerAgent is chosen to perform output audits, check clinical code confidence levels, and log warning indicators."
+
+        # 8. Reviewer Inconsistency Backtracking (Rule 5)
+        if "ReviewerAgent" in completed_agents:
+            has_coding_inconsistency = any("[Coding Inconsistency]" in w or "Low confidence" in w for w in state.warnings)
+            has_policy_inconsistency = any("[Policy Inconsistency]" in w for w in state.warnings)
+
+            if has_coding_inconsistency:
+                coding_runs = sum(1 for entry in state.trace if entry.agent_name == "MedicalCodingAgent")
+                if coding_runs < 2:
+                    logger.warning("ReviewerAgent flagged coding/clinical inconsistency. Initiating backtracking loop to MedicalCodingAgent.")
+                    state.trace.append(
+                        TraceEntry(
+                            agent_name="Orchestrator",
+                            status="retry",
+                            message="Reviewer flagged coding inconsistency. Backtracking to MedicalCodingAgent for self-correction."
+                        )
+                    )
+                    completed_agents.discard("MedicalCodingAgent")
+                    completed_agents.discard("InsuranceAgent")
+                    completed_agents.discard("COBAgent")
+                    completed_agents.discard("FinanceAgent")
+                    completed_agents.discard("ReviewerAgent")
+                    # Retain inconsistency warning for reflection prompt
+                    state.warnings = [w for w in state.warnings if "[Coding Inconsistency]" in w or "Low confidence" in w]
+                    state.requires_human_approval = False
+                    return "MedicalCodingAgent", "Reviewer flagged coding inconsistency. Backtracking to MedicalCodingAgent for correction."
+
+            if has_policy_inconsistency:
+                insurance_runs = sum(1 for entry in state.trace if entry.agent_name == "InsuranceAgent")
+                if insurance_runs < 2:
+                    logger.warning("ReviewerAgent flagged policy mismatch/inconsistency. Initiating backtracking loop to InsuranceAgent.")
+                    state.trace.append(
+                        TraceEntry(
+                            agent_name="Orchestrator",
+                            status="retry",
+                            message="Reviewer flagged policy inconsistency. Backtracking to InsuranceAgent for correction."
+                        )
+                    )
+                    completed_agents.discard("InsuranceAgent")
+                    completed_agents.discard("COBAgent")
+                    completed_agents.discard("FinanceAgent")
+                    completed_agents.discard("ReviewerAgent")
+                    # Retain policy warning
+                    state.warnings = [w for w in state.warnings if "[Policy Inconsistency]" in w]
+                    state.requires_human_approval = False
+                    return "InsuranceAgent", "Reviewer flagged policy inconsistency. Backtracking to InsuranceAgent for correction."
 
         return None, ""
 
@@ -166,36 +292,6 @@ class Orchestrator:
                             )
                         )
                         completed_agents.add(agent.name)
-                        
-                        # Backtracking check: If ReviewerAgent has warnings containing "Low confidence",
-                        # and we haven't backtracked yet:
-                        if agent.name == "ReviewerAgent":
-                            has_low_confidence = any("Low confidence" in w for w in state.warnings)
-                            coding_runs = sum(1 for entry in state.trace if entry.agent_name == "MedicalCodingAgent")
-                            if has_low_confidence and coding_runs < 2:
-                                logger.warning("ReviewerAgent flagged low-confidence medical codes. Initiating self-correcting backtracking loop to MedicalCodingAgent.")
-                                state.trace.append(
-                                    TraceEntry(
-                                        agent_name="Orchestrator",
-                                        status="retry",
-                                        message="Orchestrator detected low-confidence codes in Reviewer audit. Backtracking to MedicalCodingAgent for self-correction reflection."
-                                    )
-                                )
-                                # Backtrack: clear completed status for downstream agents to force re-planning
-                                completed_agents.discard("MedicalCodingAgent")
-                                completed_agents.discard("InsuranceAgent")
-                                completed_agents.discard("COBAgent")
-                                completed_agents.discard("FinanceAgent")
-                                completed_agents.discard("ReviewerAgent")
-                                
-                                # Clear other warnings but retain the low-confidence warnings so the MedicalCodingAgent can inspect them
-                                state.warnings = [w for w in state.warnings if "Low confidence" in w]
-                                
-                                # Reset state.requires_human_approval since we are backtracking to correct it
-                                state.requires_human_approval = False
-                                success = True
-                                continue
-
                         success = True
 
                         if self._on_agent_complete:

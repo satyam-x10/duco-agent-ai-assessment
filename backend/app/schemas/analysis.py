@@ -10,6 +10,7 @@ class JobStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    AWAITING_APPROVAL = "awaiting_approval"
 
 
 class AnalysisStartRequest(BaseModel):

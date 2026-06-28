@@ -7,7 +7,8 @@ DuCO-Agent is a high-fidelity, multi-agent AI system designed to coordinate medi
 ## 1. Architectural Overview
 
 DuCO-Agent is designed around a **clean separation of concerns**:
-*   **Specialist Agents (Orchestration)**: Powered by the Google ADK and Gemini, these agents handle execution sequencing, input validation, audits, and pipeline logging.
+*   **Dynamic Agentic Planner**: Instead of a predefined static sequence, the orchestrator acts as a dynamic planner that inspects the live `SharedWorkflowState` and conditionally routes/backtracks to different specialist agents.
+*   **Specialist Agents (Orchestration)**: Powered by the Google ADK and Gemini, these agents handle execution sequencing, input validation, audits, and pipeline logging under the planner's direction.
 *   **Core Services (Business Logic)**: Standalone Python engines that implement strict healthcare rules (COB coordination order, CPT coverage checks, deductible accounting, and financial ledger breakdowns). Agents invoke these services but do not embed business rules inside their LLM prompts, ensuring reliable and auditable calculations.
 *   **Shared Workflow State**: A unified transaction registry (`SharedWorkflowState`) that tracks variables and accumulates parsed results as the pipeline moves from Intake to Final Review.
 
@@ -50,7 +51,29 @@ graph TD
 
 ---
 
-## 2. Agent Responsibilities
+## 2. Dynamic Planning & Conditional Routing
+
+Rather than coordinating agents in a rigid linear sequence, DuCO-Agent uses a **dynamic, state-inspecting planner** to coordinate specialist execution. The planner evaluates the live `SharedWorkflowState` at each step and makes autonomous routing decisions:
+
+1. **OCR Confidence Audit (Rule 1)**
+   - If `DocIntelAgent` finishes but any parsed document yields a confidence score `< 0.95`, the planner discards downstream progress, clears the document cache, activates the `"high_fidelity"` strategy in `ocr_strategies`, and routes execution back to `DocIntelAgent`.
+2. **Missing Diagnosis Correction / Clarification (Rule 2)**
+   - If `MedicalCodingAgent` extracts no ICD-10 diagnoses:
+     - On the first attempt, the planner automatically triggers a self-correcting retry loop back to `MedicalCodingAgent` with active warnings.
+     - If no diagnoses are resolved after the retry, the planner halts the pipeline, bypasses all insurance/financial agents, flags `state.requires_human_approval = True`, and updates the status to request human clarification.
+3. **COBAgent Bypass for Single Coverage (Rule 3)**
+   - If the patient only holds one active insurance policy, the planner dynamically bypasses the execution of `COBAgent` in the trace, executing the benefit calculations via the `COBEngine` silently to construct the required `cob_decision` for the financial ledger without running the separate specialist step.
+4. **Prior Authorization Letter Minimization (Rule 4)**
+   - The system checks if any extracted CPT procedure requires pre-authorization under the mapped policies. If no procedure requires pre-authorization, the `PreAuthorizationService` skips letter generation entirely, returning an empty set of request documents.
+5. **Reviewer Quality Backtracking & Audit Corrections (Rule 5)**
+   - During the final audit phase, `ReviewerAgent` flags logical inconsistencies (e.g. name mismatches between insurers or policy subscribers and medical records, uncovered procedure codes, or missing diagnoses).
+   - The planner inspects these warnings:
+     - **Coding/clinical inconsistencies** trigger backtracking loops back to `MedicalCodingAgent` (up to 2 runs).
+     - **Insurance/policy resolution inconsistencies** trigger backtracking loops back to `InsuranceAgent` (up to 2 runs).
+
+---
+
+## 3. Agent Responsibilities
 
 The Multi-Agent framework orchestrates seven specialist agents:
 
@@ -66,7 +89,7 @@ The Multi-Agent framework orchestrates seven specialist agents:
 
 ---
 
-## 3. Technology Stack
+## 4. Technology Stack
 
 *   **Frontend**: React (v19), TypeScript, TailwindCSS (v4), React Router, Axios, and Vite.
 *   **Backend**: Python (v3.10), FastAPI, Pydantic (Type validation), PyPDF (PDF metadata & parsing).
@@ -74,7 +97,7 @@ The Multi-Agent framework orchestrates seven specialist agents:
 
 ---
 
-## 4. Folder Structure
+## 5. Folder Structure
 
 ```text
 duco-agent-ai-assessment/
@@ -106,7 +129,7 @@ duco-agent-ai-assessment/
 
 ---
 
-## 5. End-to-End Workflow Sequence
+## 6. End-to-End Workflow Sequence
 
 ```mermaid
 sequenceDiagram
@@ -114,7 +137,7 @@ sequenceDiagram
     actor User
     participant Frontend
     participant BackendRouter as FastAPI Router
-    participant Orchestrator as Orchestrator Agent
+    participant Orchestrator as Orchestrator Agent (Dynamic Planner)
     participant SharedState as SharedWorkflowState
     participant Agents as Specialist Agents
     participant Services as System Services
@@ -128,56 +151,50 @@ sequenceDiagram
         BackendRouter-->>Frontend: Return Progress % & Status Msg
     end
     
-    Note over BackendRouter, Services: On Progress 100%, Orchestrator is Executed
+    Note over BackendRouter, Services: On Job start, Orchestrator executes dynamic planning loop
     BackendRouter->>Orchestrator: execute(state)
     Orchestrator->>SharedState: Initialize claim_id, member_id
     
-    critical Agent Execution Cycle
-        Orchestrator->>IntakeAgent: execute(state)
-        IntakeAgent->>SharedState: Read file list, validate matching names
+    loop Planner Loop (up to max_steps)
+        Orchestrator->>Orchestrator: Inspect current SharedWorkflowState
+        Note over Orchestrator: Planner decides next agent conditionally
         
-        Orchestrator->>DocIntelAgent: execute(state)
-        DocIntelAgent->>Services: process_document()
-        Services-->>DocIntelAgent: ProcessedDocument
-        DocIntelAgent->>SharedState: Save parsed text to processed_documents
+        alt Intake is not run
+            Orchestrator->>Agents: Run IntakeAgent
+        else Low OCR confidence (< 0.95)
+            Orchestrator->>Agents: Backtrack to DocIntelAgent (High-Fidelity)
+        else Medical coding is not run / empty diagnoses
+            Orchestrator->>Agents: Run / Backtrack to MedicalCodingAgent
+        else Insurance policies are not resolved
+            Orchestrator->>Agents: Run / Backtrack to InsuranceAgent
+        else Dual coverage resolved
+            Orchestrator->>Agents: Run COBAgent
+        else Single coverage resolved
+            Orchestrator->>Orchestrator: Bypass COBAgent, calculate COB silently
+        else Financial report is not run
+            Orchestrator->>Agents: Run FinanceAgent
+        else Audit check is not run
+            Orchestrator->>Agents: Run ReviewerAgent
+        else Reviewer found inconsistencies (Coding/Policy)
+            Orchestrator->>Orchestrator: Backtrack to MedicalCodingAgent or InsuranceAgent
+        end
         
-        Orchestrator->>MedicalCodingAgent: execute(state)
-        MedicalCodingAgent->>Services: analyze_document()
-        Services-->>MedicalCodingAgent: Inferred CodingResult (ICD-10/CPT)
-        MedicalCodingAgent->>SharedState: Save coding_result
-        
-        Orchestrator->>InsuranceAgent: execute(state)
-        InsuranceAgent->>Services: Load policies from mock_data/
-        Services-->>InsuranceAgent: primary_policy, secondary_policy
-        InsuranceAgent->>SharedState: Save active policies
-        
-        Orchestrator->>COBAgent: execute(state)
-        COBAgent->>Services: Coordinate benefits logic
-        Services-->>COBAgent: COBDecision
-        COBAgent->>SharedState: Save cob_decision
-        
-        Orchestrator->>FinanceAgent: execute(state)
-        FinanceAgent->>Services: Financial allocations breakdown
-        Services-->>FinanceAgent: FinancialReport
-        FinanceAgent->>SharedState: Save financial_report
-        
-        Orchestrator->>ReviewerAgent: execute(state)
-        ReviewerAgent->>SharedState: Verify confidence & consistency
-        ReviewerAgent->>SharedState: Add reviewer warnings if needed
+        Agents->>SharedState: Mutate state & write trace logs
     end
     
     BackendRouter->>Services: PreAuthorizationService.generate_letters(state)
-    Services-->>BackendRouter: Letters Markdown content
+    Note over Services: Skips generation if no procedures require preauth
+    Services-->>BackendRouter: Letters Markdown (if any)
     BackendRouter->>Services: AudioBriefingService.generate_briefing(state)
     Services-->>BackendRouter: Spoken Patient Narration Script
     
     BackendRouter-->>Frontend: Final consolidated ReportSummaryResponse
-    Frontend->>User: Displays dashboard with financial card, cost flow, preauth letter drafts, and audio narration script.
+    Frontend->>User: Displays dashboard with financial card, cost flow, preauth letters, and audio narration.
 ```
 
 ---
 
-## 6. Setup & Execution Instructions
+## 7. Setup & Execution Instructions
 
 ### Prerequisites
 *   Node.js (v18+)
@@ -233,7 +250,7 @@ sequenceDiagram
 
 ---
 
-## 7. Assumptions & General Limitations
+## 8. Assumptions & General Limitations
 
 ### Assumptions
 *   **Dual Policies**: The customer coordinates between exactly two plans (BlueShield Cross and UnitedHealth).
@@ -246,7 +263,7 @@ sequenceDiagram
 
 ---
 
-## 8. Future Improvements
+## 9. Future Improvements
 
 *   **Text-to-Speech (TTS) Streaming**: Integrate Google Cloud Text-to-Speech to dynamically stream generated patient audio briefings directly from the frontend.
 *   **Database Persistence**: Move from an in-memory job database to PostgreSQL for persistent historical claims auditing.

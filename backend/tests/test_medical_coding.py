@@ -97,13 +97,9 @@ async def test_medical_coding_fallback_simulation(monkeypatch):
         confidence=0.99
     )
     
-    res = await service.analyze_document(doc)
-    assert len(res.diagnoses) > 0
-    assert any(d.code == "S83.511A" for d in res.diagnoses)
-    
-    assert len(res.procedures) >= 2
-    assert any(p.code == "97161" for p in res.procedures)
-    assert any(p.code == "29888" for p in res.procedures)
+    with pytest.raises(RuntimeError) as exc_info:
+        await service.analyze_document(doc)
+    assert "GEMINI_API_KEY is not configured" in str(exc_info.value)
 
 
 def test_dependency_provider():

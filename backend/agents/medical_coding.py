@@ -19,6 +19,13 @@ class MedicalCodingAgent(Agent):
         
         aggregated_result = CodingResult(diagnoses=[], procedures=[])
         
+        # Check if we have previous warnings from the reviewer (reflection loop)
+        reflection_warnings = None
+        if state.warnings:
+            reflection_warnings = [w for w in state.warnings if "confidence" in w.lower()]
+            if reflection_warnings:
+                logger.info(f"{self.name} detected active reflection warnings: {reflection_warnings}")
+        
         # Analyze clinical files and aggregate coding results
         for doc_type, doc in state.processed_documents.items():
             # Skip user transcript query itself for medical coding, process clinical reports/invoices only
@@ -26,7 +33,7 @@ class MedicalCodingAgent(Agent):
                 continue
                 
             logger.info(f"{self.name} executing medical coding on {doc_type.value}")
-            result = await self.medical_coding_service.analyze_document(doc)
+            result = await self.medical_coding_service.analyze_document(doc, reflection_warnings=reflection_warnings)
             
             # Aggregate procedure and diagnosis lists
             aggregated_result.diagnoses.extend(result.diagnoses)

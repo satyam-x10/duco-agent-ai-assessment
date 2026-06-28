@@ -4,6 +4,7 @@ import { PageContainer } from '../../components/layout/PageContainer';
 import { ApiService } from '../../services/api';
 
 // Cost Flow Visualizer Component (SVG Adjudication Chain)
+// Cost Flow Visualizer Component (SVG Adjudication Chain)
 const CostFlowVisualizer: React.FC<{
   billed: number;
   primaryPaid: number;
@@ -12,6 +13,8 @@ const CostFlowVisualizer: React.FC<{
   primaryInsurer: string;
   secondaryInsurer: string;
 }> = ({ billed, primaryPaid, secondaryPaid, patientOwes, primaryInsurer, secondaryInsurer }) => {
+  const hasSecondary = !!secondaryInsurer && secondaryInsurer.trim() !== "";
+
   return (
     <div className="flex flex-col items-center py-8 bg-slate-50/50 rounded-2xl border border-slate-200/80 shadow-inner">
       {/* Node: Provider */}
@@ -56,56 +59,82 @@ const CostFlowVisualizer: React.FC<{
         </div>
       </div>
 
-      {/* Connector 2: Primary -> Secondary */}
-      <div className="flex flex-col items-center my-1.5">
-        <svg width="200" height="75" className="overflow-visible">
-          <defs>
-            <linearGradient id="grad2" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#10b981" />
-              <stop offset="100%" stopColor="#6366f1" />
-            </linearGradient>
-            <marker id="arrow-indigo" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
-            </marker>
-          </defs>
-          <path d="M 100 0 L 100 65" stroke="url(#grad2)" strokeWidth="3" markerEnd="url(#arrow-indigo)" strokeDasharray="4 2" />
-          <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
-          <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
-            Paid: {primaryPaid.toFixed(2)}
-          </text>
-        </svg>
-      </div>
+      {hasSecondary ? (
+        <>
+          {/* Connector 2: Primary -> Secondary */}
+          <div className="flex flex-col items-center my-1.5">
+            <svg width="200" height="75" className="overflow-visible">
+              <defs>
+                <linearGradient id="grad2" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#6366f1" />
+                </linearGradient>
+                <marker id="arrow-indigo" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
+                </marker>
+              </defs>
+              <path d="M 100 0 L 100 65" stroke="url(#grad2)" strokeWidth="3" markerEnd="url(#arrow-indigo)" strokeDasharray="4 2" />
+              <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
+              <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
+                Paid: {primaryPaid.toFixed(2)}
+              </text>
+            </svg>
+          </div>
 
-      {/* Node: Secondary Insurer */}
-      <div className="flex items-center gap-3 bg-white px-5 py-4 rounded-xl border border-indigo-150 shadow-sm w-64 hover:translate-y-[-2px] transition-transform duration-200 ring-1 ring-indigo-500/10">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 text-lg shadow-sm">
-          🛡️
-        </div>
-        <div>
-          <h4 className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Secondary Insurer</h4>
-          <p className="text-sm font-extrabold text-slate-800">{secondaryInsurer || 'Secondary Plan'}</p>
-        </div>
-      </div>
+          {/* Node: Secondary Insurer */}
+          <div className="flex items-center gap-3 bg-white px-5 py-4 rounded-xl border border-indigo-150 shadow-sm w-64 hover:translate-y-[-2px] transition-transform duration-200 ring-1 ring-indigo-500/10">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 text-lg shadow-sm">
+              🛡️
+            </div>
+            <div>
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Secondary Insurer</h4>
+              <p className="text-sm font-extrabold text-slate-800">{secondaryInsurer}</p>
+            </div>
+          </div>
 
-      {/* Connector 3: Secondary -> Patient */}
-      <div className="flex flex-col items-center my-1.5">
-        <svg width="200" height="75" className="overflow-visible">
-          <defs>
-            <linearGradient id="grad3" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#6366f1" />
-              <stop offset="100%" stopColor="#f59e0b" />
-            </linearGradient>
-            <marker id="arrow-amber" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
-            </marker>
-          </defs>
-          <path d="M 100 0 L 100 65" stroke="url(#grad3)" strokeWidth="3" markerEnd="url(#arrow-amber)" strokeDasharray="4 2" />
-          <rect x="35" y="18" width="130" height="28" rx="6" fill="#e0e7ff" stroke="#c7d2fe" strokeWidth="1" className="shadow-sm" />
-          <text x="100" y="36" textAnchor="middle" fill="#3730a3" className="text-xs font-bold font-mono">
-            Paid: {secondaryPaid.toFixed(2)}
-          </text>
-        </svg>
-      </div>
+          {/* Connector 3: Secondary -> Patient */}
+          <div className="flex flex-col items-center my-1.5">
+            <svg width="200" height="75" className="overflow-visible">
+              <defs>
+                <linearGradient id="grad3" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#6366f1" />
+                  <stop offset="100%" stopColor="#f59e0b" />
+                </linearGradient>
+                <marker id="arrow-amber" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
+                </marker>
+              </defs>
+              <path d="M 100 0 L 100 65" stroke="url(#grad3)" strokeWidth="3" markerEnd="url(#arrow-amber)" strokeDasharray="4 2" />
+              <rect x="35" y="18" width="130" height="28" rx="6" fill="#e0e7ff" stroke="#c7d2fe" strokeWidth="1" className="shadow-sm" />
+              <text x="100" y="36" textAnchor="middle" fill="#3730a3" className="text-xs font-bold font-mono">
+                Paid: {secondaryPaid.toFixed(2)}
+              </text>
+            </svg>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Connector 2: Primary -> Patient directly */}
+          <div className="flex flex-col items-center my-1.5">
+            <svg width="200" height="75" className="overflow-visible">
+              <defs>
+                <linearGradient id="gradDirect" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#f59e0b" />
+                </linearGradient>
+                <marker id="arrow-amber-direct" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
+                </marker>
+              </defs>
+              <path d="M 100 0 L 100 65" stroke="url(#gradDirect)" strokeWidth="3" markerEnd="url(#arrow-amber-direct)" strokeDasharray="4 2" />
+              <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
+              <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
+                Paid: {primaryPaid.toFixed(2)}
+              </text>
+            </svg>
+          </div>
+        </>
+      )}
 
       {/* Node: Patient */}
       <div className="flex items-center gap-3 bg-white px-5 py-4 rounded-xl border border-amber-150 shadow-sm w-64 hover:translate-y-[-2px] transition-transform duration-200 ring-1 ring-amber-500/10">
@@ -122,7 +151,7 @@ const CostFlowVisualizer: React.FC<{
 };
 
 // Expandable Pre-Auth Letters Panel
-const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
+const PreAuthLettersPanel: React.FC<{ letters: any[]; preauthLettersMetadata?: any[] }> = ({ letters, preauthLettersMetadata }) => {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0); // First letter open by default
 
   return (
@@ -132,6 +161,11 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
       <div className="space-y-4">
         {letters.map((letter, i) => {
           const isExpanded = expandedIndex === i;
+          const matchingMetadata = preauthLettersMetadata?.find(
+            (meta: any) => meta.insurer_name === letter.insurer_name
+          );
+          const downloadUrl = matchingMetadata ? matchingMetadata.download_url : '';
+          
           return (
             <div key={i} className="border border-slate-150 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
               <button
@@ -144,6 +178,16 @@ const PreAuthLettersPanel: React.FC<{ letters: any[] }> = ({ letters }) => {
                     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/10">
                       Drafted
                     </span>
+                    {downloadUrl && (
+                      <a
+                        href={`http://127.0.0.1:8000${downloadUrl}`}
+                        download
+                        onClick={(e) => e.stopPropagation()}
+                        className="ml-2 inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10.5px] font-extrabold text-blue-750 hover:bg-blue-100 transition-colors"
+                      >
+                        📥 Download PDF
+                      </a>
+                    )}
                   </div>
                   <p className="text-[10px] text-slate-450 mt-1">Policy ID: {letter.policy_id} • Generated at: {new Date(letter.generated_at).toLocaleDateString()}</p>
                 </div>
@@ -242,14 +286,14 @@ const AgentPipelineVisualizer: React.FC<{ trace: any[] }> = ({ trace }) => {
                 )}
 
                 {/* Compact Node Card */}
-                <div className={`flex flex-col items-center gap-1 px-2.5 py-2 rounded-lg border shadow-sm flex-shrink-0 transition-all hover:scale-[1.04] duration-200 {statusBg}`} style={{ minWidth: '70px' }}>
+                <div className={`flex flex-col items-center gap-1 px-2.5 py-2 rounded-lg border shadow-sm flex-shrink-0 transition-all hover:scale-[1.04] duration-200 ${statusBg}`} style={{ minWidth: '70px' }}>
                   <span className="text-base leading-none">{step.icon}</span>
                   <div className="text-center">
                     <div className="text-[9px] font-extrabold tracking-tight whitespace-nowrap">
                       {step.short}
                     </div>
                     <div className="flex items-center justify-center gap-1 mt-0.5">
-                      <span className={`h-1 w-1 rounded-full flex-shrink-0 {statusDot}`} />
+                      <span className={`h-1 w-1 rounded-full flex-shrink-0 ${statusDot}`} />
                       <span className="text-[7px] font-bold uppercase tracking-wider opacity-70 whitespace-nowrap">
                         {status}
                       </span>
@@ -274,40 +318,92 @@ export const ResultsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [failedStep, setFailedStep] = useState<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+
+  const togglePlayAudio = () => {
+    if (isPlayingAudio) {
+      window.speechSynthesis.cancel();
+      setIsPlayingAudio(false);
+    } else {
+      if (report?.audio_briefing?.full_narration) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(report.audio_briefing.full_narration);
+        utterance.onend = () => setIsPlayingAudio(false);
+        utterance.onerror = () => setIsPlayingAudio(false);
+        setIsPlayingAudio(true);
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+  };
 
   useEffect(() => {
-    const fetchReport = async () => {
-      if (!jobId) {
-        setError('No job ID provided. Please run an analysis first from the Intake Workspace.');
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      setFailedStep(null);
-      try {
-        const data = await ApiService.getReportsSummary(jobId);
-        setReport(data);
-      } catch (err: any) {
-        console.error('Failed to load reports summary:', err);
-        // Extract structured error from 424 response
-        const detail = err?.response?.data?.detail;
-        if (detail && typeof detail === 'object') {
-          setFailedStep(detail.step || null);
-          setError(detail.message || 'Pipeline failed with an unknown error.');
-        } else if (typeof detail === 'string') {
-          setError(detail);
-        } else if (err?.response?.status === 404) {
-          setError('Analysis job not found. Please run the pipeline from the Intake Workspace.');
-        } else if (err?.response?.status === 202) {
-          setError('Analysis is still in progress. Please wait for completion and refresh.');
-        } else {
-          setError('Could not retrieve benefits report summary. Please verify that intake processing has been run.');
-        }
-      } finally {
-        setLoading(false);
-      }
+    return () => {
+      window.speechSynthesis.cancel();
     };
+  }, []);
+
+  const fetchReport = async () => {
+    if (!jobId) {
+      setError('No job ID provided. Please run an analysis first from the Intake Workspace.');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setFailedStep(null);
+    try {
+      const data = await ApiService.getReportsSummary(jobId);
+      setReport(data);
+    } catch (err: any) {
+      console.error('Failed to load reports summary:', err);
+      const detail = err?.response?.data?.detail;
+      if (detail && typeof detail === 'object') {
+        setFailedStep(detail.step || null);
+        setError(detail.message || 'Pipeline failed with an unknown error.');
+      } else if (typeof detail === 'string') {
+        setError(detail);
+      } else if (err?.response?.status === 404) {
+        setError('Analysis job not found. Please run the pipeline from the Intake Workspace.');
+      } else if (err?.response?.status === 202) {
+        setError('Analysis is still in progress. Please wait for completion and refresh.');
+      } else {
+        setError('Could not retrieve benefits report summary. Please verify that intake processing has been run.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!jobId) return;
+    try {
+      setLoading(true);
+      await ApiService.approveAnalysis(jobId);
+      await fetchReport();
+    } catch (err) {
+      console.error('Failed to approve analysis:', err);
+      alert('Failed to approve claim adjudication.');
+      setLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!jobId) return;
+    try {
+      setLoading(true);
+      await ApiService.rejectAnalysis(jobId);
+      // Wait for background job launch to register progress
+      setTimeout(async () => {
+        await fetchReport();
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to reject analysis:', err);
+      alert('Failed to reject claim adjudication.');
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchReport();
   }, [jobId]);
 
@@ -373,6 +469,57 @@ export const ResultsPage: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* Clinician Human-in-the-Loop Review Alert */}
+      {report.requires_human_approval && !report.human_approved && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-6 mb-8 shadow-sm">
+          <div className="flex gap-4 items-start">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700 shadow-sm mt-0.5">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="h-5 w-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.008v.008H12v-.008Z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h4 className="text-sm font-extrabold text-rose-900 uppercase tracking-wide">Clinician Audit Review Required</h4>
+              <p className="text-xs text-rose-800 mt-1.5 leading-relaxed font-semibold">
+                The Reviewer Agent has flagged low-confidence medical coding extraction on this claim. Clinical guidelines require manual clinician auditor review and sign-off before benefits are finalized.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors cursor-pointer"
+                >
+                  Approve Claim Adjudication
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReject}
+                  className="rounded-lg border border-rose-200 bg-white px-4 py-2 text-xs font-bold text-rose-700 shadow-sm hover:bg-rose-50 transition-colors cursor-pointer"
+                >
+                  Reject & Request Re-extraction (Reflection)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clinician Approval Confirmation Banner */}
+      {report.human_approved && (
+        <div className="rounded-xl border border-emerald-250 bg-emerald-50/50 p-5 mb-8 shadow-sm">
+          <div className="flex gap-3 items-center">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 shadow-inner">
+              ✓
+            </div>
+            <div>
+              <p className="text-xs font-bold text-emerald-900 leading-normal">
+                Clinician Sign-off Completed: This claim has been audited and approved. Letters and audio briefings have been finalized.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reviewer Warnings block */}
       {report.warnings && report.warnings.length > 0 && (
@@ -533,7 +680,7 @@ export const ResultsPage: React.FC = () => {
           </div>
 
           {/* Pre-Authorization Letters */}
-          <PreAuthLettersPanel letters={report.letters} />
+          <PreAuthLettersPanel letters={report.letters} preauthLettersMetadata={report.preauth_letters} />
 
         </div>
 
@@ -597,13 +744,13 @@ export const ResultsPage: React.FC = () => {
                       <span className="text-[10px]">{icon}</span>
                     </div>
 
-                    <div className={`space-y-1.5 border rounded-xl p-3.5 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 {cardBorder}`}>
+                    <div className={`space-y-1.5 border rounded-xl p-3.5 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 ${cardBorder}`}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="font-extrabold text-slate-800 text-sm">
                             {entry.agent_name}
                           </span>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold border uppercase tracking-wider {statusBadge}`}>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold border uppercase tracking-wider ${statusBadge}`}>
                             {entry.status}
                           </span>
                         </div>
@@ -642,10 +789,24 @@ export const ResultsPage: React.FC = () => {
 
               <button
                 type="button"
-                className="mt-3.5 rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors w-full cursor-pointer"
+                onClick={togglePlayAudio}
+                className={`mt-3.5 rounded-lg border px-4 py-1.5 text-xs font-bold transition-colors w-full cursor-pointer ${
+                  isPlayingAudio
+                    ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                Play Audio Briefing
+                {isPlayingAudio ? '⏹️ Stop Audio Briefing' : '🔊 Play Audio Briefing'}
               </button>
+              {report.audio_summary?.download_url && (
+                <a
+                  href={`http://127.0.0.1:8000${report.audio_summary.download_url}`}
+                  download
+                  className="mt-2.5 block text-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-1.5 text-[10.5px] font-extrabold text-slate-600 hover:bg-slate-200 hover:text-slate-700 transition-colors w-full cursor-pointer"
+                >
+                  📥 Download Audio Briefing (MP3)
+                </a>
+              )}
             </div>
 
             {/* Patient Briefing Narration Script */}
@@ -653,8 +814,7 @@ export const ResultsPage: React.FC = () => {
               <div className="mt-6 border-t border-slate-150 pt-5">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-450 mb-3 flex items-center justify-between">
                   <span>Patient Briefing Script</span>
-                  <span className="text-[9px] font-semibold text-blue-650 bg-blue-50 px-1.5 py-0.5 rounded">Future TTS Ready</span>
-                </h4>
+                  <span className="text-[9px] font-semibold text-emerald-650 bg-emerald-50 px-1.5 py-0.5 rounded">TTS Enabled</span></h4>
                 <div className="space-y-3.5 text-xs">
                   {report.audio_briefing.sections.map((section: any, idx: number) => (
                     <div key={idx} className="bg-slate-50/50 rounded-xl p-3 border border-slate-100">

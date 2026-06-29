@@ -12,7 +12,7 @@ class FinancialSummary(BaseModel):
     primary_paid: float = Field(..., description="Amount covered by the primary insurance plan")
     secondary_paid: float = Field(..., description="Amount covered by the secondary insurance plan")
     patient_responsibility: float = Field(..., description="The remaining net patient out-of-pocket amount")
-    currency: str = Field("USD", description="Currency format tag")
+    currency: str = Field("INR", description="Currency format tag")
 
 
 class LetterMetadata(BaseModel):

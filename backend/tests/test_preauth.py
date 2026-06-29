@@ -64,8 +64,8 @@ def test_generate_letters_dual_coverage(preauth_service, mock_insurance_service)
     # Verify pre-auth rules resolved under BS-120-BLUE
     # CPT 29881 requires preauth on BlueShield (YES (Required))
     # CPT 97161 does not (No (Covered))
-    assert "| `29881` | Arthroscopy knee meniscus repair | $8,900.00 | YES (Required) |" in content1
-    assert "| `97161` | PT Evaluation | $650.00 | No (Covered) |" in content1
+    assert "| `29881` | Arthroscopy knee meniscus repair | ₹8,900.00 | YES (Required) |" in content1
+    assert "| `97161` | PT Evaluation | ₹650.00 | No (Covered) |" in content1
 
     # Insurer 2: UnitedHealth
     letter2 = response.letters[1]
@@ -79,7 +79,7 @@ def test_generate_letters_dual_coverage(preauth_service, mock_insurance_service)
     
     # Verify pre-auth rules resolved under UH-990-GOLD
     # CPT 29881 does NOT require preauth on UnitedHealth (No (Covered))
-    assert "| `29881` | Arthroscopy knee meniscus repair | $8,900.00 | No (Covered) |" in content2
+    assert "| `29881` | Arthroscopy knee meniscus repair | ₹8,900.00 | No (Covered) |" in content2
 
 
 def test_generate_letters_single_coverage(preauth_service, mock_insurance_service):

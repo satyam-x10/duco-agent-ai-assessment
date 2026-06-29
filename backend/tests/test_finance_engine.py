@@ -93,7 +93,7 @@ def test_finance_engine_aggregation(finance_engine):
     assert breakdown.patient_responsibility.total_deductible == 65.0
     assert breakdown.patient_responsibility.total_coinsurance == 0.0
     assert breakdown.patient_responsibility.total_responsibility == 65.0
-    assert "comprising $65.00 towards deductibles" in breakdown.patient_responsibility.explanation_notes
+    assert "comprising ₹65.00 towards deductibles" in breakdown.patient_responsibility.explanation_notes
 
 
 def test_finance_engine_split_coinsurance(finance_engine):

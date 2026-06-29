@@ -113,8 +113,10 @@ export const ApiService = {
   /**
    * Triggers the coordination assessment.
    */
-  async startAnalysis(): Promise<AnalysisStartResponse> {
-    const response = await apiClient.post<AnalysisStartResponse>('/analysis/start');
+  async startAnalysis(ocrEngine?: string): Promise<AnalysisStartResponse> {
+    const response = await apiClient.post<AnalysisStartResponse>('/analysis/start', {
+      ocr_engine: ocrEngine || 'library'
+    });
     return response.data;
   },
 

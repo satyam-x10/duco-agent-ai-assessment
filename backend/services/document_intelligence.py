@@ -17,7 +17,7 @@ class DocumentProcessor(ABC):
     """Abstract class establishing the parsing contract for document processors."""
 
     @abstractmethod
-    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
+    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard", ocr_engine: str = "gemini") -> ProcessedDocument:
         """Parses the document at file_path and constructs a structured ProcessedDocument."""
         pass
 
@@ -25,7 +25,7 @@ class DocumentProcessor(ABC):
 class TextProcessor(DocumentProcessor):
     """Concrete processor responsible for extracting raw unicode text files."""
 
-    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
+    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard", ocr_engine: str = "gemini") -> ProcessedDocument:
         logger.info(f"TextProcessor reading file {file_path}")
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -53,8 +53,8 @@ class TextProcessor(DocumentProcessor):
 class PDFProcessor(DocumentProcessor):
     """Concrete processor responsible for parsing PDF documents."""
 
-    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
-        logger.info(f"PDFProcessor parsing PDF document {file_path} with strategy {strategy}")
+    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard", ocr_engine: str = "gemini") -> ProcessedDocument:
+        logger.info(f"PDFProcessor parsing PDF document {file_path} with strategy {strategy} and engine {ocr_engine}")
 
         try:
             reader = PdfReader(file_path)
@@ -69,10 +69,14 @@ class PDFProcessor(DocumentProcessor):
 
             # Fall back to OCR if no text was found (scanned PDF) or if high-fidelity is requested
             if not extracted_text.strip() or strategy == "high_fidelity":
-                logger.info(f"PDF {file_path.name} contains no extractable text or requested high-fidelity. Attempting Gemini Vision OCR.")
-                extracted_text = await self._ocr_with_gemini(file_path, strategy=strategy)
+                logger.info(f"PDF {file_path.name} contains no extractable text or requested high-fidelity. OCR engine: {ocr_engine}.")
+                if ocr_engine == "gemini":
+                    extracted_text = await self._ocr_with_gemini(file_path, strategy=strategy)
+                    parser_name = "PDFProcessor (Gemini OCR - High Fidelity)" if strategy == "high_fidelity" else "PDFProcessor (Gemini OCR)"
+                else:
+                    extracted_text = await self._ocr_with_rapidocr(file_path, strategy=strategy)
+                    parser_name = "PDFProcessor (RapidOCR Local - High Fidelity)" if strategy == "high_fidelity" else "PDFProcessor (RapidOCR Local)"
                 confidence = 0.99 if strategy == "high_fidelity" else 0.90
-                parser_name = "PDFProcessor (Gemini OCR - High Fidelity)" if strategy == "high_fidelity" else "PDFProcessor (Gemini OCR)"
             else:
                 confidence = 0.99
                 parser_name = "PDFProcessor"
@@ -86,7 +90,8 @@ class PDFProcessor(DocumentProcessor):
                     "parser": parser_name,
                     "page_count_resolved": page_count,
                     "file_path": str(file_path),
-                    "strategy": strategy
+                    "strategy": strategy,
+                    "ocr_engine": ocr_engine
                 }
             )
         except (IOError, RuntimeError, ValueError):
@@ -134,15 +139,75 @@ class PDFProcessor(DocumentProcessor):
             logger.error(f"Gemini OCR failed for scanned PDF '{file_path.name}': {e}")
             raise RuntimeError(f"Gemini Vision OCR failed for '{file_path.name}': {str(e)}")
 
+    async def _ocr_with_rapidocr(self, file_path: Path, strategy: str = "standard") -> str:
+        """Performs local RapidOCR on a scanned PDF by extracting page images."""
+        from pypdf import PdfReader
+        from rapidocr_onnxruntime import RapidOCR
+        
+        logger.info(f"[RapidOCR PDF] Loading PDF from {file_path}")
+        try:
+            reader = PdfReader(file_path)
+            engine = RapidOCR()
+            texts = []
+            
+            for idx, page in enumerate(reader.pages):
+                page_text = []
+                # Try to extract embedded text first
+                embedded = page.extract_text()
+                if embedded and embedded.strip():
+                    page_text.append(embedded)
+                
+                # Check for images on page to OCR
+                if hasattr(page, "images") and page.images:
+                    for img_idx, img in enumerate(page.images):
+                        try:
+                            res, elapse = engine(img.data)
+                            if res:
+                                page_text.append("\n".join([line[1] for line in res]))
+                        except Exception as img_err:
+                            logger.warning(f"Failed to OCR page {idx} image {img_idx} using local RapidOCR: {img_err}")
+                
+                if page_text:
+                    texts.append("\n".join(page_text))
+            
+            return "\n\n".join(texts)
+        except Exception as e:
+            logger.error(f"Local RapidOCR failed for PDF '{file_path.name}': {e}")
+            raise RuntimeError(f"Local OCR library failed for PDF '{file_path.name}': {str(e)}")
+
 
 class ImageProcessor(DocumentProcessor):
-    """Concrete processor parsing image formats. Uses Gemini Vision OCR API."""
+    """Concrete processor parsing image formats. Uses Gemini Vision OCR API or Local RapidOCR."""
 
-    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
-        logger.info(f"ImageProcessor executing OCR on image {file_path} with strategy {strategy}")
+    async def process(self, file_path: Path, document_type: DocumentType, strategy: str = "standard", ocr_engine: str = "gemini") -> ProcessedDocument:
+        logger.info(f"ImageProcessor executing OCR on image {file_path} with strategy {strategy} and engine {ocr_engine}")
 
+        if ocr_engine == "gemini":
+            extracted_text = await self._ocr_with_gemini(file_path, strategy=strategy)
+            parser_name = "ImageProcessor"
+            ocr_method = "GeminiVisionOCR (High Fidelity)" if strategy == "high_fidelity" else "GeminiVisionOCR"
+        else:
+            extracted_text = await self._ocr_with_rapidocr(file_path)
+            parser_name = "ImageProcessor (RapidOCR Local)"
+            ocr_method = "RapidOCRLocal"
+
+        return ProcessedDocument(
+            document_type=document_type,
+            extracted_text=extracted_text,
+            page_count=1,
+            confidence=0.99 if strategy == "high_fidelity" else 0.98,
+            metadata={
+                "parser": parser_name,
+                "ocr_method": ocr_method,
+                "file_path": str(file_path),
+                "strategy": strategy,
+                "ocr_engine": ocr_engine
+            }
+        )
+
+    async def _ocr_with_gemini(self, file_path: Path, strategy: str = "standard") -> str:
+        """Performs Gemini Vision OCR on an image. Raises on failure."""
         api_key = os.environ.get("GEMINI_API_KEY")
-        print(f"API KEY was {api_key}")
         if not api_key:
             raise RuntimeError(
                 f"Image document '{file_path.name}' requires Gemini Vision OCR, "
@@ -173,28 +238,28 @@ class ImageProcessor(DocumentProcessor):
                     prompt
                 ]
             )
-            extracted_text = response.text
-            if not extracted_text or not extracted_text.strip():
+            text = response.text
+            if not text or not text.strip():
                 raise RuntimeError(f"Gemini Vision OCR returned empty response for '{file_path.name}'.")
-
+            return text
         except RuntimeError:
             raise
         except Exception as e:
             logger.error(f"Gemini Vision OCR API call failed for '{file_path.name}': {e}")
             raise RuntimeError(f"Gemini Vision OCR failed for '{file_path.name}': {str(e)}")
 
-        return ProcessedDocument(
-            document_type=document_type,
-            extracted_text=extracted_text,
-            page_count=1,
-            confidence=0.99 if strategy == "high_fidelity" else 0.98,
-            metadata={
-                "parser": "ImageProcessor",
-                "ocr_method": "GeminiVisionOCR (High Fidelity)" if strategy == "high_fidelity" else "GeminiVisionOCR",
-                "file_path": str(file_path),
-                "strategy": strategy
-            }
-        )
+    async def _ocr_with_rapidocr(self, file_path: Path) -> str:
+        """Performs local OCR on image using RapidOCR."""
+        from rapidocr_onnxruntime import RapidOCR
+        try:
+            engine = RapidOCR()
+            res, elapse = engine(str(file_path))
+            if not res:
+                raise ValueError("RapidOCR returned no text for this image.")
+            return "\n".join([line[1] for line in res])
+        except Exception as e:
+            logger.error(f"Local RapidOCR failed for image '{file_path.name}': {e}")
+            raise RuntimeError(f"Local OCR library failed for image '{file_path.name}': {str(e)}")
 
 
 class DocumentProcessorFactory:
@@ -223,10 +288,10 @@ class DocumentIntelligenceService:
     def __init__(self, factory: DocumentProcessorFactory):
         self.factory = factory
 
-    async def process_document(self, file_path: Path, document_type: DocumentType, strategy: str = "standard") -> ProcessedDocument:
+    async def process_document(self, file_path: Path, document_type: DocumentType, strategy: str = "standard", ocr_engine: str = "gemini") -> ProcessedDocument:
         if not file_path.exists():
             raise FileNotFoundError(f"Document file does not exist at path '{file_path}'.")
 
         processor = self.factory.get_processor(file_path)
-        logger.info(f"Executing document intelligence pipeline on '{file_path.name}' for slot '{document_type.value}' with strategy '{strategy}'")
-        return await processor.process(file_path, document_type, strategy=strategy)
+        logger.info(f"Executing document intelligence pipeline on '{file_path.name}' for slot '{document_type.value}' with strategy '{strategy}' and OCR engine '{ocr_engine}'")
+        return await processor.process(file_path, document_type, strategy=strategy, ocr_engine=ocr_engine)

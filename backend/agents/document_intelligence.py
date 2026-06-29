@@ -30,7 +30,7 @@ class DocIntelAgent(Agent):
             
             # Execute parsing/OCR with dynamic strategy (e.g. high_fidelity on retry)
             strategy = state.ocr_strategies.get(doc_type, "standard")
-            processed_doc = await self.doc_intel_service.process_document(file_path, doc_type, strategy=strategy)
+            processed_doc = await self.doc_intel_service.process_document(file_path, doc_type, strategy=strategy, ocr_engine=state.ocr_engine)
             state.processed_documents[doc_type] = processed_doc
             
         logger.info(f"{self.name} completed parsing. {len(state.processed_documents)} documents now in state.")

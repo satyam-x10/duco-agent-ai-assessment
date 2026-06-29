@@ -26,6 +26,7 @@ async def start_analysis(payload: AnalysisStartRequest = None):
     """
     job_id = str(uuid.uuid4())
     now = datetime.utcnow()
+    ocr_engine = payload.ocr_engine if payload else "library"
 
     jobs_db[job_id] = {
         "job_id": job_id,
@@ -36,6 +37,7 @@ async def start_analysis(payload: AnalysisStartRequest = None):
         "completed_at": None,
         "error_details": None,
         "state": None,
+        "ocr_engine": ocr_engine,
     }
 
     # Launch the orchestration pipeline as a background task
@@ -113,8 +115,9 @@ async def _run_orchestration(job_id: str) -> None:
         # resolves cross-plan coverage by name match across all loaded policies.
         member_id = "98765"
 
+        ocr_engine = job.get("ocr_engine", "library")
         claim_id = f"CLAIM-{job_id[:8].upper()}"
-        state = SharedWorkflowState(claim_id=claim_id, member_id=member_id)
+        state = SharedWorkflowState(claim_id=claim_id, member_id=member_id, ocr_engine=ocr_engine)
 
         orchestrator = get_orchestrator()
         orchestrator.set_progress_callback(on_agent_complete)

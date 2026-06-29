@@ -97,15 +97,15 @@ class FinanceEngine:
         secondary_name = cob_decision.secondary_provider or "Secondary Insurer"
         
         explanation = (
-            f"The total billed amount of ${total_billed:.2f} was coordinated across dual coverage. "
-            f"{primary_name} paid ${total_primary_paid:.2f}. "
+            f"The total billed amount of ₹{total_billed:.2f} was coordinated across dual coverage. "
+            f"{primary_name} paid ₹{total_primary_paid:.2f}. "
         )
         if cob_decision.secondary_policy_id:
-            explanation += f"{secondary_name} coordinated and paid ${total_secondary_paid:.2f}. "
+            explanation += f"{secondary_name} coordinated and paid ₹{total_secondary_paid:.2f}. "
         
         explanation += (
-            f"The patient out-of-pocket responsibility is ${total_patient_responsibility:.2f}, "
-            f"comprising ${total_deductible_paid:.2f} towards deductibles and ${total_coinsurance_paid:.2f} towards coinsurance."
+            f"The patient out-of-pocket responsibility is ₹{total_patient_responsibility:.2f}, "
+            f"comprising ₹{total_deductible_paid:.2f} towards deductibles and ₹{total_coinsurance_paid:.2f} towards coinsurance."
         )
 
         patient_responsibility = PatientResponsibility(

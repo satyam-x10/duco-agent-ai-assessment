@@ -53,7 +53,7 @@ def test_audio_briefing_generation_priya(briefing_service):
                 total_deductible=0.0,
                 total_coinsurance=65.0,
                 total_responsibility=65.0,
-                explanation_notes="Coordinated patient responsibility is $65.00."
+                explanation_notes="Coordinated patient responsibility is ₹65.00."
             ),
             summary=CostSummary(
                 total_billed=650.0,
@@ -138,7 +138,7 @@ def test_audio_briefing_generation_aarav_surgery(briefing_service):
                 total_deductible=200.0,
                 total_coinsurance=380.0,
                 total_responsibility=580.0,
-                explanation_notes="Patient responsibility is $580.00."
+                explanation_notes="Patient responsibility is ₹580.00."
             ),
             summary=CostSummary(
                 total_billed=8900.0,

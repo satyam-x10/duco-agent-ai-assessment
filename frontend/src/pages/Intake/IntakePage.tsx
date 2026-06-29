@@ -51,6 +51,7 @@ export const IntakePage: React.FC = () => {
     const [phaseMessage, setPhaseMessage] = useState('');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [failedAgent, setFailedAgent] = useState<string | null>(null);
+    const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
 
     // Fetch existing files from backend storage on mount
     useEffect(() => {
@@ -133,7 +134,7 @@ export const IntakePage: React.FC = () => {
 
         try {
             // 1. Post to start analysis
-            const { job_id } = await ApiService.startAnalysis();
+            const { job_id } = await ApiService.startAnalysis(ocrEngine);
             setAnalysisStatus('processing');
 
             // 2. Poll job status
@@ -334,6 +335,7 @@ export const IntakePage: React.FC = () => {
                         <li>Drag and drop files directly onto each card, or click a card to choose files.</li>
                         <li>Only one file can occupy each requirement card at a time.</li>
                         <li>Files are securely uploaded and stored in the backend service for analysis.</li>
+                        <li><strong className="text-slate-700">Currency Requirement:</strong> Please ensure that all uploaded invoices, estimate sheets, and documents list financial amounts in <strong className="text-slate-700">Indian Rupees (INR / ₹)</strong>.</li>
                     </ul>
                 </div>
 
@@ -359,17 +361,47 @@ export const IntakePage: React.FC = () => {
                                     All 4 required files have been verified. The orchestrator is prepared for Coordination of Benefits reasoning.
                                 </p>
 
-                                <div className="mt-4 flex items-center gap-3">
-                                    <button
-                                        onClick={startAssessment}
-                                        type="button"
-                                        className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
-                                    >
-                                        Start Assessment
-                                    </button>
-                                    <span className="text-[10px] font-medium text-slate-400">
-                                        (Orchestrates specialist agents)
-                                    </span>
+                                <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Image OCR Engine Choice</label>
+                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 w-fit">
+                                            <button
+                                                type="button"
+                                                onClick={() => setOcrEngine('library')}
+                                                className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all duration-200 cursor-pointer ${
+                                                    ocrEngine === 'library'
+                                                        ? 'bg-white text-slate-800 shadow-sm border border-slate-200/50'
+                                                        : 'text-slate-500 hover:text-slate-800 border border-transparent'
+                                                }`}
+                                            >
+                                                Local OCR Library (Default)
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setOcrEngine('gemini')}
+                                                className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all duration-200 cursor-pointer ${
+                                                    ocrEngine === 'gemini'
+                                                        ? 'bg-white text-slate-800 shadow-sm border border-slate-200/50'
+                                                        : 'text-slate-500 hover:text-slate-800 border border-transparent'
+                                                }`}
+                                            >
+                                                Gemini Vision OCR
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 self-end sm:mb-[2px]">
+                                        <button
+                                            onClick={startAssessment}
+                                            type="button"
+                                            className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
+                                        >
+                                            Start Assessment
+                                        </button>
+                                        <span className="text-[10px] font-medium text-slate-400">
+                                            (Orchestrates specialist agents)
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>

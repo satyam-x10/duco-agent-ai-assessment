@@ -51,7 +51,7 @@ async def test_rule1_low_ocr_confidence_backtracking():
     
     # First call: returns confidence 0.90 (low)
     # Second call (high_fidelity): returns confidence 0.99
-    async def process_document_mock(file_path, doc_type, strategy="standard"):
+    async def process_document_mock(file_path, doc_type, strategy="standard", ocr_engine="gemini"):
         if strategy == "high_fidelity":
             return ProcessedDocument(
                 document_type=doc_type,

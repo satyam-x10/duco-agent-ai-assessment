@@ -46,12 +46,13 @@ export const IntakePage: React.FC = () => {
     });
 
     // Analysis coordination states
-    const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'completed' | 'failed'>('idle');
+    const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'awaiting_approval' | 'completed' | 'failed'>('idle');
     const [progress, setProgress] = useState(0);
     const [phaseMessage, setPhaseMessage] = useState('');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [failedAgent, setFailedAgent] = useState<string | null>(null);
     const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
+    const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
     // Fetch existing files from backend storage on mount
     useEffect(() => {
@@ -135,6 +136,7 @@ export const IntakePage: React.FC = () => {
         try {
             // 1. Post to start analysis
             const { job_id } = await ApiService.startAnalysis(ocrEngine);
+            setActiveJobId(job_id);
             setAnalysisStatus('processing');
 
             // 2. Poll job status
@@ -147,13 +149,18 @@ export const IntakePage: React.FC = () => {
 
                     if (jobStatus === 'completed') {
                         clearInterval(interval);
+                        setAnalysisStatus('completed');
                         setTimeout(() => {
                             navigate(`/results?job_id=${job_id}`);
                         }, 500);
+                    } else if (jobStatus === 'awaiting_approval') {
+                        setAnalysisStatus('awaiting_approval');
                     } else if (jobStatus === 'failed') {
                         clearInterval(interval);
                         setAnalysisStatus('failed');
                         setErrorMessage(message || error_details || 'Pipeline failed. Check backend logs for details.');
+                    } else if (jobStatus === 'processing') {
+                        setAnalysisStatus('processing');
                     }
                 } catch (pollErr: any) {
                     clearInterval(interval);
@@ -244,25 +251,35 @@ export const IntakePage: React.FC = () => {
     }
 
     // Render Loading / Progress state
-    if (analysisStatus === 'starting' || analysisStatus === 'processing') {
+    if (analysisStatus === 'starting' || analysisStatus === 'processing' || analysisStatus === 'awaiting_approval') {
         return (
             <PageContainer className="max-w-xl py-16">
                 <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-md">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                        <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                    </div>
+                    {analysisStatus === 'awaiting_approval' ? (
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-50 text-amber-500 text-2xl">
+                            ⚠️
+                        </div>
+                    ) : (
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                            <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                    )}
 
-                    <h2 className="mt-6 text-xl font-bold text-slate-900">Analyzing Benefits</h2>
-                    <p className="mt-1.5 text-xs text-slate-400 font-semibold tracking-wide uppercase">Orchestrating AI Agents via Google ADK</p>
+                    <h2 className="mt-6 text-xl font-bold text-slate-900">
+                        {analysisStatus === 'awaiting_approval' ? 'Clinician Sign-off Required' : 'Analyzing Benefits'}
+                    </h2>
+                    <p className="mt-1.5 text-xs text-slate-400 font-semibold tracking-wide uppercase">
+                        {analysisStatus === 'awaiting_approval' ? 'Reviewer Agent Flagged Quality Checks' : 'Orchestrating AI Agents via Google ADK'}
+                    </p>
 
                     {/* Progress Bar */}
                     <div className="mt-8">
                         <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
                             <div
-                                className="h-full bg-blue-600 transition-all duration-500 rounded-full"
+                                className={`h-full transition-all duration-500 rounded-full ${analysisStatus === 'awaiting_approval' ? 'bg-amber-550' : 'bg-blue-600'}`}
                                 style={{ width: `${progress}%` }}
                             />
                         </div>
@@ -273,9 +290,51 @@ export const IntakePage: React.FC = () => {
                     </div>
 
                     {/* Current Phase Message */}
-                    <p className="mt-6 text-sm font-medium text-slate-650 bg-slate-50 border border-slate-100 rounded-xl py-3.5 px-5">
+                    <p className={`mt-6 text-sm font-medium border rounded-xl py-3.5 px-5 ${
+                        analysisStatus === 'awaiting_approval'
+                            ? 'text-amber-800 bg-amber-50/50 border-amber-200/50'
+                            : 'text-slate-650 bg-slate-50 border-slate-100'
+                    }`}>
                         {phaseMessage}
                     </p>
+
+                    {/* Clinician Approval Actions */}
+                    {analysisStatus === 'awaiting_approval' && activeJobId && (
+                        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        setPhaseMessage('Approving claim and finalizing reports...');
+                                        await ApiService.approveAnalysis(activeJobId);
+                                    } catch (err: any) {
+                                        console.error('Approve failed:', err);
+                                        setErrorMessage('Failed to sign off manual approval. Please retry.');
+                                        setAnalysisStatus('failed');
+                                    }
+                                }}
+                                type="button"
+                                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors cursor-pointer"
+                            >
+                                Approve Claim
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        setPhaseMessage('Rejecting current extraction. Triggering pipeline reflection...');
+                                        await ApiService.rejectAnalysis(activeJobId);
+                                    } catch (err: any) {
+                                        console.error('Reject failed:', err);
+                                        setErrorMessage('Failed to submit reject feedback. Please retry.');
+                                        setAnalysisStatus('failed');
+                                    }
+                                }}
+                                type="button"
+                                className="rounded-lg bg-rose-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-rose-700 transition-colors cursor-pointer"
+                            >
+                                Reject & Refine
+                            </button>
+                        </div>
+                    )}
                 </div>
             </PageContainer>
         );

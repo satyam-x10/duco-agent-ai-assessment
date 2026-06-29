@@ -12,7 +12,19 @@ from app.schemas.insurance_engine import InsurancePolicy
 from app.schemas.cob_engine import COBDecision
 from app.schemas.finance_engine import FinancialReport
 
+from pathlib import Path
+
 logger = logging.getLogger(__name__)
+
+def append_realtime_log(message: str) -> None:
+    log_path = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "pipeline_realtime_trace.txt"
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] {message}\n")
+    except Exception as e:
+        logger.error(f"Failed to write to realtime log: {e}")
 
 class FatalBusinessError(Exception):
     """Exception raised for permanent business logic failures that should never be retried."""
@@ -242,6 +254,8 @@ class Orchestrator:
         for custom test sequences.
         """
         logger.info(f"Starting orchestration pipeline for claim {state.claim_id}")
+        append_realtime_log(f"--- STARTING ORCHESTRATION PIPELINE for Claim: {state.claim_id} Patient Member: {state.member_id} ---")
+        append_realtime_log(f"Selected OCR Engine: {state.ocr_engine}")
         state.workflow_status = "running"
 
         # Check if this is the standard production pipeline
@@ -269,7 +283,15 @@ class Orchestrator:
 
             while state.workflow_status == "running" and step_count < max_steps:
                 step_count += 1
+                
+                num_traces_before = len(state.trace)
                 next_agent_name, reasoning = self._evaluate_next_step(state, completed_agents)
+
+                if len(state.trace) > num_traces_before:
+                    for i in range(num_traces_before, len(state.trace)):
+                        entry = state.trace[i]
+                        if entry.status == "retry":
+                            append_realtime_log(f"[Backtracking Detected] {entry.message}")
 
                 if not next_agent_name:
                     logger.info("Agentic planner completed successfully.")
@@ -278,12 +300,14 @@ class Orchestrator:
 
                 agent = self.agents_dict.get(next_agent_name)
                 logger.info(f"Agentic Planner chose {next_agent_name}. Reason: {reasoning}")
+                append_realtime_log(f"[Planner Choice] Chose {next_agent_name}. Reason: {reasoning}")
 
                 retry_count = 0
                 success = False
 
                 while not success:
                     try:
+                        append_realtime_log(f"[Agent Start] Executing {agent.name} (Attempt {retry_count + 1})...")
                         await agent.execute(state)
                         state.trace.append(
                             TraceEntry(
@@ -295,6 +319,45 @@ class Orchestrator:
                         completed_agents.add(agent.name)
                         success = True
 
+                        # Real-time state logging after success!
+                        append_realtime_log(f"[Agent Success] Completed {agent.name} successfully.")
+                        if agent.name == "DocIntelAgent":
+                            for doc_type, doc in state.processed_documents.items():
+                                parser = doc.metadata.get("parser", "Unknown")
+                                engine = doc.metadata.get("ocr_engine", "gemini")
+                                path = doc.metadata.get("file_path", "unknown_path")
+                                append_realtime_log(
+                                    f"  -> Extracted text from {doc_type.value} using parser '{parser}' (Engine: '{engine}') with confidence {doc.confidence} from '{Path(path).name}':"
+                                )
+                                # Log the actual extracted text
+                                append_realtime_log(f"===== EXTRACTED TEXT FROM {doc_type.value} =====\n{doc.extracted_text}\n==================================================")
+                        elif agent.name == "MedicalCodingAgent" and state.coding_result:
+                            diags = [f"{d.code} ({d.description}, confidence: {d.confidence})" for d in state.coding_result.diagnoses]
+                            procs = [f"{p.code} ({p.description}, confidence: {p.confidence})" for p in state.coding_result.procedures]
+                            append_realtime_log(f"  -> Extracted Diagnoses: {', '.join(diags) if diags else 'None'}")
+                            append_realtime_log(f"  -> Extracted Procedures: {', '.join(procs) if procs else 'None'}")
+                        elif agent.name == "InsuranceAgent":
+                            pri = f"{state.primary_policy.provider_name} ({state.primary_policy.policy_id})" if state.primary_policy else "None"
+                            sec = f"{state.secondary_policy.provider_name} ({state.secondary_policy.policy_id})" if state.secondary_policy else "None"
+                            append_realtime_log(f"  -> Resolved primary coverage: {pri}")
+                            append_realtime_log(f"  -> Resolved secondary coverage: {sec}")
+                        elif agent.name == "COBAgent" and state.cob_decision:
+                            append_realtime_log(f"  -> Payment Order Resolved: Primary Plan={state.cob_decision.primary_policy_id}, Secondary Plan={state.cob_decision.secondary_policy_id or 'None'}")
+                        elif agent.name == "FinanceAgent" and state.financial_report:
+                            summary = state.financial_report.breakdown.summary
+                            resp = state.financial_report.breakdown.patient_responsibility
+                            append_realtime_log(
+                                f"  -> Coordinated Benefits Ledger: Billed ₹{summary.total_billed:.2f}, Primary Paid ₹{summary.total_primary_paid:.2f}, Secondary Paid ₹{summary.total_secondary_paid:.2f}, Coordinated Patient Responsibility ₹{summary.total_patient_responsibility:.2f}"
+                            )
+                            append_realtime_log(
+                                f"  -> Out-of-pocket splits: Deductible satisfied ₹{resp.total_deductible:.2f}, Coinsurance applied ₹{resp.total_coinsurance:.2f}"
+                            )
+                            # Log actual coordinated explanation notes
+                            append_realtime_log(f"===== FINANCIAL EXPLANATION NOTES =====\n{resp.explanation_notes}\n========================================")
+                        elif agent.name == "ReviewerAgent":
+                            append_realtime_log(f"  -> Warnings: {state.warnings}")
+                            append_realtime_log(f"  -> Requires manual clinician approval: {state.requires_human_approval}")
+
                         if self._on_agent_complete:
                             progress = progress_milestones.get(agent.name, 50)
                             try:
@@ -305,6 +368,7 @@ class Orchestrator:
                     except BUSINESS_ERROR_TYPES as e:
                         error_msg = str(e)
                         logger.error(f"Business error in agent {agent.name}: {error_msg}")
+                        append_realtime_log(f"[Agent Fatal Error] {agent.name} encountered a business error: {error_msg}")
                         state.trace.append(
                             TraceEntry(
                                 agent_name=agent.name,
@@ -316,6 +380,7 @@ class Orchestrator:
                         state.workflow_status = "failed"
                         state.failed_agent = agent.name
                         state.failure_reason = error_msg
+                        append_realtime_log(f"--- ORCHESTRATION PIPELINE COMPLETED (Status: {state.workflow_status}) ---")
                         raise RuntimeError(
                             f"Pipeline stopped: {agent.name} encountered a business error: {error_msg}"
                         ) from e
@@ -324,6 +389,7 @@ class Orchestrator:
                         retry_count += 1
                         error_msg = str(e)
                         logger.warning(f"Transient error in agent {agent.name} (Attempt {retry_count}): {error_msg}")
+                        append_realtime_log(f"[Agent Transient Error] {agent.name} (Attempt {retry_count}): {error_msg}")
 
                         if retry_count <= max_retries:
                             state.trace.append(
@@ -346,10 +412,12 @@ class Orchestrator:
                             state.workflow_status = "failed"
                             state.failed_agent = agent.name
                             state.failure_reason = fatal_msg
+                            append_realtime_log(f"--- ORCHESTRATION PIPELINE COMPLETED (Status: {state.workflow_status}) ---")
                             raise RuntimeError(fatal_msg) from e
 
             if state.workflow_status == "running":
                 state.workflow_status = "success"
+            append_realtime_log(f"--- ORCHESTRATION PIPELINE COMPLETED (Status: {state.workflow_status}) ---")
         else:
             # Fallback for custom test sequences
             for agent in self.agents_list:

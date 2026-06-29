@@ -38,7 +38,7 @@ export interface AnalysisStartResponse {
 
 export interface AnalysisStatusResponse {
   job_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'awaiting_approval';
   progress_percent: number;
   message: string;
   created_at: string;

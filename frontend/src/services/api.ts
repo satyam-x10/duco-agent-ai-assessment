@@ -38,7 +38,7 @@ export interface AnalysisStartResponse {
 
 export interface AnalysisStatusResponse {
   job_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'awaiting_approval';
   progress_percent: number;
   message: string;
   created_at: string;
@@ -113,8 +113,10 @@ export const ApiService = {
   /**
    * Triggers the coordination assessment.
    */
-  async startAnalysis(): Promise<AnalysisStartResponse> {
-    const response = await apiClient.post<AnalysisStartResponse>('/analysis/start');
+  async startAnalysis(ocrEngine?: string): Promise<AnalysisStartResponse> {
+    const response = await apiClient.post<AnalysisStartResponse>('/analysis/start', {
+      ocr_engine: ocrEngine || 'library'
+    });
     return response.data;
   },
 

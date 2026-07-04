@@ -57,7 +57,7 @@ def test_payment_order_aarav(cob_engine):
 def test_coordinate_benefits_priya_pt(cob_engine):
     """Verify full financial coordination for Priya Sen's physical therapy claim."""
     # Claim for Priya Sen (98765)
-    # Physical Therapy Eval CPT 97161. Billed charge: $650.00
+    # Physical Therapy Eval CPT 97161. Billed charge: ₹20000.00
     # Setup fresh deductibles in a separate service instance to prevent test cross-pollution
     service = InsuranceService()
     engine = COBEngine(service)
@@ -65,13 +65,13 @@ def test_coordinate_benefits_priya_pt(cob_engine):
     # Verify initial deductible balances
     policy_a = service._policies["BS-120-BLUE"]
     policy_b = service._policies["UH-990-GOLD"]
-    assert policy_a.deductible.remaining_individual == 200.0
-    assert policy_b.deductible.remaining_individual == 400.0
+    assert policy_a.deductible.remaining_individual == 20000.0
+    assert policy_b.deductible.remaining_individual == 40000.0
 
     claim = Claim(
         claim_id="CLAIM-100",
         member_id="98765",
-        lines=[ClaimLine(cpt_code="97161", billed_amount=650.0)],
+        lines=[ClaimLine(cpt_code="97161", billed_amount=20000.0)],
     )
 
     decision = engine.coordinate_benefits(claim)
@@ -81,46 +81,46 @@ def test_coordinate_benefits_priya_pt(cob_engine):
     assert decision.patient_name == "Priya Sen"
     assert decision.primary_policy_id == "BS-120-BLUE"
     assert decision.secondary_policy_id == "UH-990-GOLD"
-    assert decision.total_billed == 650.0
+    assert decision.total_billed == 20000.0
 
     # Adjudication checks:
     # 1. Primary (BlueShield):
-    #   - Billed: $650.00
-    #   - Deductible Applied: $200.00 (remaining individual deductible)
-    #   - Coinsurance Subject: $650 - $200 = $450
+    #   - Billed: ₹20000.00
+    #   - Deductible Applied: ₹20000.00 (remaining individual deductible)
+    #   - Coinsurance Subject: ₹20000 - ₹20000 = ₹0
     #   - Coinsurance Rate: 20%
-    #   - Coinsurance Amount: $90.00
-    #   - Primary Paid: $360.00
-    #   - Primary Patient Responsibility: $200 + $90 = $290.00
+    #   - Coinsurance Amount: ₹0.00
+    #   - Primary Paid: ₹0.00
+    #   - Primary Patient Responsibility: ₹20000.00
     line_cov = decision.lines_coverage[0]
     assert line_cov.primary_coverage.is_covered is True
-    assert line_cov.primary_coverage.deductible_applied == 200.0
-    assert line_cov.primary_coverage.coinsurance_amount == 90.0
-    assert line_cov.primary_coverage.primary_paid == 360.0
-    assert line_cov.primary_coverage.patient_responsibility == 290.0
+    assert line_cov.primary_coverage.deductible_applied == 20000.0
+    assert line_cov.primary_coverage.coinsurance_amount == 0.0
+    assert line_cov.primary_coverage.primary_paid == 0.0
+    assert line_cov.primary_coverage.patient_responsibility == 20000.0
 
     # 2. Secondary (UnitedHealth):
-    #   - Patient responsibility after primary: $290.00
-    #   - Secondary remaining individual deductible: $400.00
-    #   - Secondary deductible applied if primary: min(650, 400) = $400.00
+    #   - Patient responsibility after primary: ₹20000.00
+    #   - Secondary remaining individual deductible: ₹40000.00
+    #   - Secondary deductible applied if primary: min(20000, 40000) = ₹20000.00
     #   - Secondary coinsurance rate: 10%
-    #   - Secondary normal benefit if primary: (650 - 400) * 0.9 = $225.00
-    #   - Secondary paid: min(290, 225) = $225.00
-    #   - Secondary deductible satisfied: min(290, 400) = $290.00
-    #   - Final patient responsibility: $290 - $225 = $65.00
+    #   - Secondary normal benefit if primary: (20000 - 40000) * 0.9 = ₹0.00
+    #   - Secondary paid: min(20000, 0) = ₹0.00
+    #   - Secondary deductible satisfied: min(20000, 20000) = ₹20000.00
+    #   - Final patient responsibility: ₹20000 - ₹0 = ₹20000.00
     assert line_cov.secondary_coverage.is_covered is True
-    assert line_cov.secondary_coverage.deductible_applied == 290.0
-    assert line_cov.secondary_coverage.secondary_paid == 225.0
-    assert line_cov.secondary_coverage.patient_responsibility == 65.0
+    assert line_cov.secondary_coverage.deductible_applied == 20000.0
+    assert line_cov.secondary_coverage.secondary_paid == 0.0
+    assert line_cov.secondary_coverage.patient_responsibility == 20000.0
 
     # 3. Totals checks:
-    assert decision.total_primary_paid == 360.0
-    assert decision.total_secondary_paid == 225.0
-    assert decision.total_patient_responsibility == 65.0
+    assert decision.total_primary_paid == 0.0
+    assert decision.total_secondary_paid == 0.0
+    assert decision.total_patient_responsibility == 20000.0
 
     # 4. Check updated remaining deductibles on policy instances
     assert policy_a.deductible.remaining_individual == 0.0
-    assert policy_b.deductible.remaining_individual == 110.0  # 400 - 290
+    assert policy_b.deductible.remaining_individual == 20000.0  # 40000 - 20000
 
 
 def test_coordinate_benefits_custom_not_covered():
@@ -134,10 +134,10 @@ def test_coordinate_benefits_custom_not_covered():
         policy_id="POLICY-A",
         provider_name="Insurer A",
         group_number="A1",
-        deductible=Deductible(individual=100.0, family=200.0, remaining_individual=100.0, remaining_family=200.0),
+        deductible=Deductible(individual=10000.0, family=20000.0, remaining_individual=10000.0, remaining_family=20000.0),
         coinsurance=Coinsurance(rate=0.20),
-        out_of_pocket_max=1000.0,
-        remaining_out_of_pocket_max=1000.0,
+        out_of_pocket_max=100000.0,
+        remaining_out_of_pocket_max=100000.0,
         members=[
             Member(member_id="MEM-001", first_name="Jane", last_name="Doe", role="subscriber", relationship_to_subscriber="self", date_of_birth="1990-01-01")
         ],
@@ -151,10 +151,10 @@ def test_coordinate_benefits_custom_not_covered():
         policy_id="POLICY-B",
         provider_name="Insurer B",
         group_number="B1",
-        deductible=Deductible(individual=50.0, family=100.0, remaining_individual=50.0, remaining_family=100.0),
+        deductible=Deductible(individual=5000.0, family=10000.0, remaining_individual=5000.0, remaining_family=10000.0),
         coinsurance=Coinsurance(rate=0.10),
-        out_of_pocket_max=1000.0,
-        remaining_out_of_pocket_max=1000.0,
+        out_of_pocket_max=100000.0,
+        remaining_out_of_pocket_max=100000.0,
         members=[
             Member(member_id="MEM-002", first_name="Jane", last_name="Doe", role="dependent", relationship_to_subscriber="spouse", date_of_birth="1990-01-01")
         ],
@@ -171,7 +171,7 @@ def test_coordinate_benefits_custom_not_covered():
     claim = Claim(
         claim_id="CLAIM-200",
         member_id="MEM-001",
-        lines=[ClaimLine(cpt_code="99999", billed_amount=200.0)],
+        lines=[ClaimLine(cpt_code="99999", billed_amount=20000.0)],
     )
 
     decision = engine.coordinate_benefits(claim)
@@ -181,26 +181,26 @@ def test_coordinate_benefits_custom_not_covered():
 
     # Line item adjudication details:
     # 1. Primary (excluded):
-    #   - Billed: $200.00
-    #   - Paid: $0.00
-    #   - Patient Responsibility: $200.00
+    #   - Billed: ₹20000.00
+    #   - Paid: ₹0.00
+    #   - Patient Responsibility: ₹20000.00
     line_cov = decision.lines_coverage[0]
     assert line_cov.primary_coverage.is_covered is False
     assert line_cov.primary_coverage.primary_paid == 0.0
-    assert line_cov.primary_coverage.patient_responsibility == 200.0
+    assert line_cov.primary_coverage.patient_responsibility == 20000.0
 
     # 2. Secondary (covered, processes as primary since primary excluded it):
-    #   - Billed: $200.00
-    #   - Deductible Applied: $50.00
-    #   - Coinsurance Subject: $150.00
-    #   - Coinsurance rate: 10% ($15.00 coinsurance)
-    #   - Paid: $135.00
-    #   - Patient Responsibility: $50 + $15 = $65.00
+    #   - Billed: ₹20000.00
+    #   - Deductible Applied: ₹5000.00
+    #   - Coinsurance Subject: ₹15000.00
+    #   - Coinsurance rate: 10% (₹1500.00 coinsurance)
+    #   - Paid: ₹13500.00
+    #   - Patient Responsibility: ₹5000 + ₹1500 = ₹6500.00
     assert line_cov.secondary_coverage.is_covered is True
-    assert line_cov.secondary_coverage.deductible_applied == 50.0
-    assert line_cov.secondary_coverage.secondary_paid == 135.0
-    assert line_cov.secondary_coverage.patient_responsibility == 65.0
+    assert line_cov.secondary_coverage.deductible_applied == 5000.0
+    assert line_cov.secondary_coverage.secondary_paid == 13500.0
+    assert line_cov.secondary_coverage.patient_responsibility == 6500.0
 
     assert decision.total_primary_paid == 0.0
-    assert decision.total_secondary_paid == 135.0
-    assert decision.total_patient_responsibility == 65.0
+    assert decision.total_secondary_paid == 13500.0
+    assert decision.total_patient_responsibility == 6500.0

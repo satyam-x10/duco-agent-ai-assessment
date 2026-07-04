@@ -7,11 +7,11 @@ logger = logging.getLogger(__name__)
 
 # Typical billed amounts matching the assessment scenarios
 CPT_BILLED_AMOUNTS = {
-    "97161": 650.00,  # Physical Therapy Evaluation
-    "97110": 200.00,  # Therapeutic Exercises
-    "73721": 1200.00, # MRI Joint Lower Extremity (Aarav MRI)
-    "29881": 8900.00, # Meniscectomy Arthroscopy (Aarav Surgery)
-    "29888": 15000.00 # ACL reconstruction
+    "97161": 20000.00,  # Physical Therapy Evaluation
+    "97110": 10000.00,  # Therapeutic Exercises
+    "73721": 12000.00,  # MRI Joint Lower Extremity (Aarav MRI)
+    "29881": 100000.00, # Meniscectomy Arthroscopy (Aarav Surgery)
+    "29888": 350000.00  # ACL reconstruction
 }
 
 

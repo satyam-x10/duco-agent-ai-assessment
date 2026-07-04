@@ -46,11 +46,13 @@ export const IntakePage: React.FC = () => {
     });
 
     // Analysis coordination states
-    const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'completed' | 'failed'>('idle');
+    const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'awaiting_approval' | 'completed' | 'failed'>('idle');
     const [progress, setProgress] = useState(0);
     const [phaseMessage, setPhaseMessage] = useState('');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [failedAgent, setFailedAgent] = useState<string | null>(null);
+    const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
+    const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
     // Fetch existing files from backend storage on mount
     useEffect(() => {
@@ -133,7 +135,8 @@ export const IntakePage: React.FC = () => {
 
         try {
             // 1. Post to start analysis
-            const { job_id } = await ApiService.startAnalysis();
+            const { job_id } = await ApiService.startAnalysis(ocrEngine);
+            setActiveJobId(job_id);
             setAnalysisStatus('processing');
 
             // 2. Poll job status
@@ -146,13 +149,18 @@ export const IntakePage: React.FC = () => {
 
                     if (jobStatus === 'completed') {
                         clearInterval(interval);
+                        setAnalysisStatus('completed');
                         setTimeout(() => {
                             navigate(`/results?job_id=${job_id}`);
                         }, 500);
+                    } else if (jobStatus === 'awaiting_approval') {
+                        setAnalysisStatus('awaiting_approval');
                     } else if (jobStatus === 'failed') {
                         clearInterval(interval);
                         setAnalysisStatus('failed');
                         setErrorMessage(message || error_details || 'Pipeline failed. Check backend logs for details.');
+                    } else if (jobStatus === 'processing') {
+                        setAnalysisStatus('processing');
                     }
                 } catch (pollErr: any) {
                     clearInterval(interval);
@@ -243,25 +251,35 @@ export const IntakePage: React.FC = () => {
     }
 
     // Render Loading / Progress state
-    if (analysisStatus === 'starting' || analysisStatus === 'processing') {
+    if (analysisStatus === 'starting' || analysisStatus === 'processing' || analysisStatus === 'awaiting_approval') {
         return (
             <PageContainer className="max-w-xl py-16">
                 <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-md">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                        <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                    </div>
+                    {analysisStatus === 'awaiting_approval' ? (
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-50 text-amber-500 text-2xl">
+                            ⚠️
+                        </div>
+                    ) : (
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                            <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                    )}
 
-                    <h2 className="mt-6 text-xl font-bold text-slate-900">Analyzing Benefits</h2>
-                    <p className="mt-1.5 text-xs text-slate-400 font-semibold tracking-wide uppercase">Orchestrating AI Agents via Google ADK</p>
+                    <h2 className="mt-6 text-xl font-bold text-slate-900">
+                        {analysisStatus === 'awaiting_approval' ? 'Clinician Sign-off Required' : 'Analyzing Benefits'}
+                    </h2>
+                    <p className="mt-1.5 text-xs text-slate-400 font-semibold tracking-wide uppercase">
+                        {analysisStatus === 'awaiting_approval' ? 'Reviewer Agent Flagged Quality Checks' : 'Orchestrating AI Agents via Google ADK'}
+                    </p>
 
                     {/* Progress Bar */}
                     <div className="mt-8">
                         <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
                             <div
-                                className="h-full bg-blue-600 transition-all duration-500 rounded-full"
+                                className={`h-full transition-all duration-500 rounded-full ${analysisStatus === 'awaiting_approval' ? 'bg-amber-550' : 'bg-blue-600'}`}
                                 style={{ width: `${progress}%` }}
                             />
                         </div>
@@ -272,9 +290,51 @@ export const IntakePage: React.FC = () => {
                     </div>
 
                     {/* Current Phase Message */}
-                    <p className="mt-6 text-sm font-medium text-slate-650 bg-slate-50 border border-slate-100 rounded-xl py-3.5 px-5">
+                    <p className={`mt-6 text-sm font-medium border rounded-xl py-3.5 px-5 ${
+                        analysisStatus === 'awaiting_approval'
+                            ? 'text-amber-800 bg-amber-50/50 border-amber-200/50'
+                            : 'text-slate-650 bg-slate-50 border-slate-100'
+                    }`}>
                         {phaseMessage}
                     </p>
+
+                    {/* Clinician Approval Actions */}
+                    {analysisStatus === 'awaiting_approval' && activeJobId && (
+                        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        setPhaseMessage('Approving claim and finalizing reports...');
+                                        await ApiService.approveAnalysis(activeJobId);
+                                    } catch (err: any) {
+                                        console.error('Approve failed:', err);
+                                        setErrorMessage('Failed to sign off manual approval. Please retry.');
+                                        setAnalysisStatus('failed');
+                                    }
+                                }}
+                                type="button"
+                                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors cursor-pointer"
+                            >
+                                Approve Claim
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        setPhaseMessage('Rejecting current extraction. Triggering pipeline reflection...');
+                                        await ApiService.rejectAnalysis(activeJobId);
+                                    } catch (err: any) {
+                                        console.error('Reject failed:', err);
+                                        setErrorMessage('Failed to submit reject feedback. Please retry.');
+                                        setAnalysisStatus('failed');
+                                    }
+                                }}
+                                type="button"
+                                className="rounded-lg bg-rose-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-rose-700 transition-colors cursor-pointer"
+                            >
+                                Reject & Refine
+                            </button>
+                        </div>
+                    )}
                 </div>
             </PageContainer>
         );
@@ -334,6 +394,7 @@ export const IntakePage: React.FC = () => {
                         <li>Drag and drop files directly onto each card, or click a card to choose files.</li>
                         <li>Only one file can occupy each requirement card at a time.</li>
                         <li>Files are securely uploaded and stored in the backend service for analysis.</li>
+                        <li><strong className="text-slate-700">Currency Requirement:</strong> Please ensure that all uploaded invoices, estimate sheets, and documents list financial amounts in <strong className="text-slate-700">Indian Rupees (INR / ₹)</strong>.</li>
                     </ul>
                 </div>
 
@@ -359,17 +420,47 @@ export const IntakePage: React.FC = () => {
                                     All 4 required files have been verified. The orchestrator is prepared for Coordination of Benefits reasoning.
                                 </p>
 
-                                <div className="mt-4 flex items-center gap-3">
-                                    <button
-                                        onClick={startAssessment}
-                                        type="button"
-                                        className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
-                                    >
-                                        Start Assessment
-                                    </button>
-                                    <span className="text-[10px] font-medium text-slate-400">
-                                        (Orchestrates specialist agents)
-                                    </span>
+                                <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Image OCR Engine Choice</label>
+                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 w-fit">
+                                            <button
+                                                type="button"
+                                                onClick={() => setOcrEngine('library')}
+                                                className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all duration-200 cursor-pointer ${
+                                                    ocrEngine === 'library'
+                                                        ? 'bg-white text-slate-800 shadow-sm border border-slate-200/50'
+                                                        : 'text-slate-500 hover:text-slate-800 border border-transparent'
+                                                }`}
+                                            >
+                                                Local OCR Library (Default)
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setOcrEngine('gemini')}
+                                                className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all duration-200 cursor-pointer ${
+                                                    ocrEngine === 'gemini'
+                                                        ? 'bg-white text-slate-800 shadow-sm border border-slate-200/50'
+                                                        : 'text-slate-500 hover:text-slate-800 border border-transparent'
+                                                }`}
+                                            >
+                                                Gemini Vision OCR
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 self-end sm:mb-[2px]">
+                                        <button
+                                            onClick={startAssessment}
+                                            type="button"
+                                            className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
+                                        >
+                                            Start Assessment
+                                        </button>
+                                        <span className="text-[10px] font-medium text-slate-400">
+                                            (Orchestrates specialist agents)
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>

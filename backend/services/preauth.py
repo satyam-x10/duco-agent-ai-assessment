@@ -41,7 +41,7 @@ The following procedures are requested for prior authorization review under this
 | :--- | :--- | :--- | :--- |
 ${procedures_rows}
 
-*   **Total Estimated Billed Charges:** $${total_billed:.2f}
+*   **Total Estimated Billed Charges:** ₹${total_billed}
 
 ### 5. CLINICAL STATEMENT & MEDICAL NECESSITY
 *   **Primary Clinical Indications:** ${clinical_findings}
@@ -153,9 +153,9 @@ class PreAuthorizationService:
                         break
 
                 preauth_str = "YES (Required)" if requires_preauth else "No (Covered)"
-                procedures_rows.append(f"| `{proc.code}` | {proc.description} | ${cost:,.2f} | {preauth_str} |")
+                procedures_rows.append(f"| `{proc.code}` | {proc.description} | ₹{cost:,.2f} | {preauth_str} |")
 
-            procedures_table = "\n".join(procedures_rows) if procedures_rows else "| N/A | No procedures requested | $0.00 | - |"
+            procedures_table = "\n".join(procedures_rows) if procedures_rows else "| N/A | No procedures requested | ₹0.00 | - |"
 
             # Render the Template
             template = Template(LETTER_TEMPLATE)
@@ -169,7 +169,7 @@ class PreAuthorizationService:
                 group_number=policy.group_number,
                 diagnoses_list=diagnoses_list,
                 procedures_rows=procedures_table,
-                total_billed=total_billed,
+                total_billed=f"{total_billed:,.2f}",
                 clinical_findings=clinical_findings,
                 primary_diagnosis_code=primary_diag_code,
                 primary_diagnosis_desc=primary_diag_desc,

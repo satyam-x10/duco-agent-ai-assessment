@@ -12,7 +12,8 @@ const CostFlowVisualizer: React.FC<{
   patientOwes: number;
   primaryInsurer: string;
   secondaryInsurer: string;
-}> = ({ billed, primaryPaid, secondaryPaid, patientOwes, primaryInsurer, secondaryInsurer }) => {
+  currencySymbol: string;
+}> = ({ billed, primaryPaid, secondaryPaid, patientOwes, primaryInsurer, secondaryInsurer, currencySymbol }) => {
   const hasSecondary = !!secondaryInsurer && secondaryInsurer.trim() !== "";
 
   return (
@@ -43,7 +44,7 @@ const CostFlowVisualizer: React.FC<{
           <path d="M 100 0 L 100 65" stroke="url(#grad1)" strokeWidth="3" markerEnd="url(#arrow)" strokeDasharray="4 2" />
           <rect x="35" y="18" width="130" height="28" rx="6" fill="#eff6ff" stroke="#bfdbfe" strokeWidth="1" className="shadow-sm" />
           <text x="100" y="36" textAnchor="middle" fill="#1e3a8a" className="text-xs font-bold font-mono">
-            Billed: {billed.toFixed(2)}
+            Billed: {currencySymbol}{billed.toFixed(2)}
           </text>
         </svg>
       </div>
@@ -76,7 +77,7 @@ const CostFlowVisualizer: React.FC<{
               <path d="M 100 0 L 100 65" stroke="url(#grad2)" strokeWidth="3" markerEnd="url(#arrow-indigo)" strokeDasharray="4 2" />
               <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
               <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
-                Paid: {primaryPaid.toFixed(2)}
+                Paid: {currencySymbol}{primaryPaid.toFixed(2)}
               </text>
             </svg>
           </div>
@@ -107,7 +108,7 @@ const CostFlowVisualizer: React.FC<{
               <path d="M 100 0 L 100 65" stroke="url(#grad3)" strokeWidth="3" markerEnd="url(#arrow-amber)" strokeDasharray="4 2" />
               <rect x="35" y="18" width="130" height="28" rx="6" fill="#e0e7ff" stroke="#c7d2fe" strokeWidth="1" className="shadow-sm" />
               <text x="100" y="36" textAnchor="middle" fill="#3730a3" className="text-xs font-bold font-mono">
-                Paid: {secondaryPaid.toFixed(2)}
+                Paid: {currencySymbol}{secondaryPaid.toFixed(2)}
               </text>
             </svg>
           </div>
@@ -129,7 +130,7 @@ const CostFlowVisualizer: React.FC<{
               <path d="M 100 0 L 100 65" stroke="url(#gradDirect)" strokeWidth="3" markerEnd="url(#arrow-amber-direct)" strokeDasharray="4 2" />
               <rect x="35" y="18" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1" className="shadow-sm" />
               <text x="100" y="36" textAnchor="middle" fill="#065f46" className="text-xs font-bold font-mono">
-                Paid: {primaryPaid.toFixed(2)}
+                Paid: {currencySymbol}{primaryPaid.toFixed(2)}
               </text>
             </svg>
           </div>
@@ -143,7 +144,7 @@ const CostFlowVisualizer: React.FC<{
         </div>
         <div>
           <h4 className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Patient Responsibility</h4>
-          <p className="text-sm font-extrabold text-slate-800">Remaining: {patientOwes.toFixed(2)}</p>
+          <p className="text-sm font-extrabold text-slate-800">Remaining: {currencySymbol}{patientOwes.toFixed(2)}</p>
         </div>
       </div>
     </div>
@@ -555,25 +556,25 @@ export const ResultsPage: React.FC = () => {
               <div className="rounded-lg bg-slate-50 p-4 border border-slate-100 shadow-sm hover:scale-103 transition-transform duration-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Billed</span>
                 <p className="text-xl font-extrabold text-slate-900 mt-1">
-                  {report.financial_summary.total_billed.toFixed(2)}
+                  {report.financial_summary.currency === 'INR' ? '₹' : '$'}{report.financial_summary.total_billed.toFixed(2)}
                 </p>
               </div>
               <div className="rounded-lg bg-blue-50/50 p-4 border border-blue-100 shadow-sm hover:scale-103 transition-transform duration-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Primary Insurer Paid</span>
                 <p className="text-xl font-extrabold text-blue-700 mt-1">
-                  {report.financial_summary.primary_paid.toFixed(2)}
+                  {report.financial_summary.currency === 'INR' ? '₹' : '$'}{report.financial_summary.primary_paid.toFixed(2)}
                 </p>
               </div>
               <div className="rounded-lg bg-indigo-50/50 p-4 border border-indigo-100 shadow-sm hover:scale-103 transition-transform duration-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Secondary Insurer Paid</span>
                 <p className="text-xl font-extrabold text-indigo-700 mt-1">
-                  {report.financial_summary.secondary_paid.toFixed(2)}
+                  {report.financial_summary.currency === 'INR' ? '₹' : '$'}{report.financial_summary.secondary_paid.toFixed(2)}
                 </p>
               </div>
               <div className="rounded-lg bg-amber-50 p-4 border border-amber-150 shadow-sm hover:scale-103 transition-transform duration-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Patient Responsibility</span>
                 <p className="text-xl font-extrabold text-amber-850 mt-1">
-                  {report.financial_summary.patient_responsibility.toFixed(2)}
+                  {report.financial_summary.currency === 'INR' ? '₹' : '$'}{report.financial_summary.patient_responsibility.toFixed(2)}
                 </p>
               </div>
             </div>
@@ -589,6 +590,7 @@ export const ResultsPage: React.FC = () => {
               patientOwes={report.financial_summary.patient_responsibility}
               primaryInsurer={report.preauth_letters[0]?.insurer_name || 'BlueShield Cross'}
               secondaryInsurer={report.preauth_letters[1]?.insurer_name || 'UnitedHealth'}
+              currencySymbol={report.financial_summary.currency === 'INR' ? '₹' : '$'}
             />
           </div>
 

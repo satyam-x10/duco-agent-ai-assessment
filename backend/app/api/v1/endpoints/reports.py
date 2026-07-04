@@ -150,7 +150,7 @@ async def get_report_summary(job_id: str):
             primary_paid=primary_paid,
             secondary_paid=secondary_paid,
             patient_responsibility=patient_responsibility,
-            currency="USD"
+            currency="INR"
         ),
         preauth_letters=preauth_letters,
         audio_summary=AudioMetadata(

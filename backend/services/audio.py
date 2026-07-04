@@ -102,13 +102,13 @@ class AudioBriefingService:
             patient_responsibility = state.cob_decision.total_patient_responsibility
 
         financial_text = (
-            f"The total billed amount from your provider is {total_billed:.2f} dollars. "
-            f"Your primary insurance is expected to cover {primary_paid:.2f} dollars, "
+            f"The total billed amount from your provider is {total_billed:.2f} rupees. "
+            f"Your primary insurance is expected to cover {primary_paid:.2f} rupees, "
         )
         if secondary_paid > 0:
-            financial_text += f"and your secondary insurance is expected to coordinate an additional payment of {secondary_paid:.2f} dollars. "
+            financial_text += f"and your secondary insurance is expected to coordinate an additional payment of {secondary_paid:.2f} rupees. "
         
-        financial_text += f"This leaves you with an estimated personal responsibility of {patient_responsibility:.2f} dollars."
+        financial_text += f"This leaves you with an estimated personal responsibility of {patient_responsibility:.2f} rupees."
 
         # 6. Section: Pre-Authorization
         preauth_required_insurers = []

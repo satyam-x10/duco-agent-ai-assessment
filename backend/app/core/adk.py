@@ -510,4 +510,3 @@ class Orchestrator:
 
             state.workflow_status = "success"
         logger.info(f"Orchestration pipeline completed successfully for claim {state.claim_id}")
-        logger.info(f"Orchestration pipeline completed successfully for claim {state.claim_id}")

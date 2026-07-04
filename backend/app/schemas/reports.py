@@ -38,6 +38,25 @@ class TraceEntrySchema(BaseModel):
     timestamp: str = Field(..., description="ISO timestamp of the event")
 
 
+class ClaimLineCoverageSchema(BaseModel):
+    """Flattened per-procedure coverage decision for frontend display.
+    
+    Shows exactly which procedures were covered vs denied by each insurer,
+    the financial math per line, and the denial/explanation reason.
+    """
+    cpt_code: str = Field(..., description="CPT procedure code")
+    billed_amount: float = Field(..., description="Original billed charge for this procedure")
+    is_primary_covered: bool = Field(..., description="Whether the primary insurer covers this CPT code")
+    primary_deductible: float = Field(0.0, description="Primary deductible applied to this line")
+    primary_coinsurance: float = Field(0.0, description="Primary coinsurance amount charged to patient")
+    primary_paid: float = Field(0.0, description="Amount paid by the primary insurer")
+    is_secondary_covered: bool = Field(False, description="Whether the secondary insurer covers this CPT code")
+    secondary_deductible: float = Field(0.0, description="Secondary deductible applied to this line")
+    secondary_paid: float = Field(0.0, description="Amount paid by the secondary insurer")
+    patient_responsibility: float = Field(..., description="Final patient out-of-pocket for this procedure")
+    notes: str = Field("", description="Detailed explanation: denial reason, calculation notes, or coordination details")
+
+
 class ReportSummaryResponse(BaseModel):
     """Consolidated benefit coordination report details and download links."""
     job_id: str = Field(..., description="The UUID of the analysis run this report matches")
@@ -56,5 +75,9 @@ class ReportSummaryResponse(BaseModel):
     audio_briefing: Optional[AudioBriefing] = Field(None, description="Structured patient audio briefing summary narration")
     requires_human_approval: bool = Field(False, description="Flag indicating if this claim requires human approval")
     human_approved: bool = Field(False, description="Flag indicating if the claim has been manually approved")
+    
+    # Per-procedure coverage decisions — shows exactly why each CPT was covered or denied
+    cob_lines: List[ClaimLineCoverageSchema] = Field(default_factory=list, description="Per-procedure coverage decision breakdown from the COB engine")
+
 
 

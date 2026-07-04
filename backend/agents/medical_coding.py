@@ -33,7 +33,9 @@ class MedicalCodingAgent(Agent):
                 continue
                 
             logger.info(f"{self.name} executing medical coding on {doc_type.value}")
-            result = await self.medical_coding_service.analyze_document(doc, reflection_warnings=reflection_warnings)
+            from tools.coding_tool import MedicalCodingTool
+            coding_tool = MedicalCodingTool(self.medical_coding_service)
+            result = await coding_tool.run(doc, reflection_warnings=reflection_warnings)
             
             # Aggregate procedure and diagnosis lists
             aggregated_result.diagnoses.extend(result.diagnoses)

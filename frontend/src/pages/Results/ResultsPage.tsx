@@ -580,6 +580,138 @@ export const ResultsPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Per-Procedure Coverage Decision Breakdown */}
+          {report.cob_lines && report.cob_lines.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Coverage Decision Breakdown</h3>
+              <p className="text-[11px] text-slate-450 mb-4">Per-procedure adjudication showing exactly which procedures were covered or denied by each insurer and why.</p>
+              
+              <div className="space-y-3">
+                {report.cob_lines.map((line: any, idx: number) => {
+                  const currSym = report.financial_summary.currency === 'INR' ? '₹' : '$';
+                  const allDenied = !line.is_primary_covered && !line.is_secondary_covered;
+                  const partialDenied = line.is_primary_covered && !line.is_secondary_covered && line.secondary_paid === 0;
+                  
+                  let borderColor = 'border-emerald-200';
+                  let bgColor = 'bg-emerald-50/30';
+                  let statusIcon = '✅';
+                  let statusText = 'Covered';
+                  let statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                  
+                  if (allDenied) {
+                    borderColor = 'border-rose-200';
+                    bgColor = 'bg-rose-50/30';
+                    statusIcon = '❌';
+                    statusText = 'Not Covered';
+                    statusColor = 'text-rose-700 bg-rose-50 border-rose-200';
+                  } else if (partialDenied) {
+                    borderColor = 'border-amber-200';
+                    bgColor = 'bg-amber-50/20';
+                    statusIcon = '⚠️';
+                    statusText = 'Partial';
+                    statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
+                  }
+                  
+                  return (
+                    <div key={idx} className={`rounded-xl border ${borderColor} ${bgColor} p-4 transition-all hover:shadow-sm`}>
+                      {/* Header row */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-300/50 font-mono">
+                            {line.cpt_code}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${statusColor}`}>
+                            {statusIcon} {statusText}
+                          </span>
+                        </div>
+                        <span className="text-sm font-extrabold text-slate-800">{currSym}{line.billed_amount.toFixed(2)}</span>
+                      </div>
+                      
+                      {/* Payment details grid */}
+                      <div className="grid grid-cols-3 gap-3 text-xs">
+                        {/* Primary */}
+                        <div className={`rounded-lg p-2.5 ${line.is_primary_covered ? 'bg-blue-50/60 border border-blue-100' : 'bg-slate-50 border border-slate-150'}`}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className={`h-1.5 w-1.5 rounded-full ${line.is_primary_covered ? 'bg-blue-500' : 'bg-slate-300'}`} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Primary</span>
+                          </div>
+                          <p className={`text-sm font-extrabold ${line.is_primary_covered ? 'text-blue-700' : 'text-slate-400'}`}>
+                            {line.is_primary_covered ? `${currSym}${line.primary_paid.toFixed(2)}` : 'Not Covered'}
+                          </p>
+                          {line.is_primary_covered && (line.primary_deductible > 0 || line.primary_coinsurance > 0) && (
+                            <p className="text-[10px] text-slate-450 mt-0.5">
+                              {line.primary_deductible > 0 && `Ded: ${currSym}${line.primary_deductible.toFixed(0)}`}
+                              {line.primary_deductible > 0 && line.primary_coinsurance > 0 && ' • '}
+                              {line.primary_coinsurance > 0 && `Coins: ${currSym}${line.primary_coinsurance.toFixed(0)}`}
+                            </p>
+                          )}
+                        </div>
+                        
+                        {/* Secondary */}
+                        <div className={`rounded-lg p-2.5 ${line.is_secondary_covered ? 'bg-indigo-50/60 border border-indigo-100' : 'bg-slate-50 border border-slate-150'}`}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className={`h-1.5 w-1.5 rounded-full ${line.is_secondary_covered ? 'bg-indigo-500' : 'bg-slate-300'}`} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Secondary</span>
+                          </div>
+                          <p className={`text-sm font-extrabold ${line.is_secondary_covered ? 'text-indigo-700' : 'text-slate-400'}`}>
+                            {line.is_secondary_covered ? `${currSym}${line.secondary_paid.toFixed(2)}` : 'Not Covered'}
+                          </p>
+                          {line.is_secondary_covered && line.secondary_deductible > 0 && (
+                            <p className="text-[10px] text-slate-450 mt-0.5">Ded credited: {currSym}{line.secondary_deductible.toFixed(0)}</p>
+                          )}
+                        </div>
+                        
+                        {/* Patient */}
+                        <div className={`rounded-lg p-2.5 ${allDenied ? 'bg-rose-50/60 border border-rose-150' : 'bg-amber-50/60 border border-amber-100'}`}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className={`h-1.5 w-1.5 rounded-full ${allDenied ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Patient</span>
+                          </div>
+                          <p className={`text-sm font-extrabold ${allDenied ? 'text-rose-700' : 'text-amber-800'}`}>
+                            {currSym}{line.patient_responsibility.toFixed(2)}
+                          </p>
+                          {allDenied && (
+                            <p className="text-[10px] text-rose-600 font-semibold mt-0.5">Full amount owed</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Notes / denial reason */}
+                      {line.notes && (
+                        <div className={`mt-2.5 rounded-lg px-3 py-2 text-[11px] leading-relaxed font-medium ${
+                          allDenied 
+                            ? 'bg-rose-50 text-rose-800 border border-rose-150' 
+                            : 'bg-slate-50/80 text-slate-600 border border-slate-100'
+                        }`}>
+                          {allDenied && <span className="font-bold text-rose-700">⛔ Denial Reason: </span>}
+                          {line.notes}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Summary footer for denied procedures */}
+              {report.cob_lines.some((l: any) => !l.is_primary_covered) && (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/40 p-4">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-base mt-0.5">🚫</span>
+                    <div>
+                      <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wide">Coverage Denial Summary</h4>
+                      <p className="text-[11px] text-rose-800 mt-1 leading-relaxed">
+                        {report.cob_lines.filter((l: any) => !l.is_primary_covered).length} of {report.cob_lines.length} procedure(s) were 
+                        <strong> not covered</strong> by the primary insurer. This may be because the uploaded documents contained procedures 
+                        that are excluded from your policy, or the extracted CPT codes do not match any covered services. 
+                        Review the denial reasons above and contact your insurer for appeals if needed.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Cost Flow Visual Path */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Adjudicated Claims Cost Flow</h3>

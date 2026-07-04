@@ -7,7 +7,8 @@ from app.schemas.reports import (
     FinancialSummary,
     LetterMetadata,
     AudioMetadata,
-    TraceEntrySchema
+    TraceEntrySchema,
+    ClaimLineCoverageSchema
 )
 from app.core.adk import SharedWorkflowState
 from app.api.v1.endpoints.analysis import jobs_db
@@ -142,6 +143,26 @@ async def get_report_summary(job_id: str):
             )
         )
 
+    # 7. Map per-procedure COB line-level coverage decisions for frontend transparency
+    cob_lines = []
+    if state.cob_decision and state.cob_decision.lines_coverage:
+        for line in state.cob_decision.lines_coverage:
+            cob_lines.append(
+                ClaimLineCoverageSchema(
+                    cpt_code=line.cpt_code,
+                    billed_amount=line.billed_amount,
+                    is_primary_covered=line.primary_coverage.is_covered,
+                    primary_deductible=line.primary_coverage.deductible_applied,
+                    primary_coinsurance=line.primary_coverage.coinsurance_amount,
+                    primary_paid=line.primary_coverage.primary_paid,
+                    is_secondary_covered=line.secondary_coverage.is_covered,
+                    secondary_deductible=line.secondary_coverage.deductible_applied,
+                    secondary_paid=line.secondary_coverage.secondary_paid,
+                    patient_responsibility=line.remaining_balance.patient_responsibility,
+                    notes=line.remaining_balance.notes or "",
+                )
+            )
+
     return ReportSummaryResponse(
         job_id=job_id,
         patient_name=patient_name,
@@ -167,6 +188,7 @@ async def get_report_summary(job_id: str):
         audio_briefing=briefing_res.briefing,
         requires_human_approval=getattr(state, "requires_human_approval", False),
         human_approved=getattr(state, "human_approved", False),
+        cob_lines=cob_lines,
     )
 
 

@@ -15,14 +15,16 @@ class InsuranceAgent(Agent):
     async def execute(self, state: SharedWorkflowState) -> None:
         logger.info(f"{self.name} resolving policies for member ID {state.member_id}")
         
-        # Resolve patient member details first
-        patient_member = self.insurance_service.get_member(state.member_id)
+        # Resolve patient member details first using formal InsuranceLookupTool
+        from tools.insurance_lookup_tool import InsuranceLookupTool
+        lookup_tool = InsuranceLookupTool(self.insurance_service)
+        patient_member = lookup_tool.get_member(state.member_id)
         if not patient_member:
             raise ValueError(f"Patient member with ID '{state.member_id}' not found.")
             
-        # Find all policies covering this member (by name and DOB)
+        # Find all policies covering this member (by name and DOB) using tool
         matched_policies = []
-        for policy in self.insurance_service._policies.values():
+        for policy in lookup_tool.get_all_policies():
             for member in policy.members:
                 if (
                     member.first_name.lower() == patient_member.first_name.lower()

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/layout/PageContainer';
@@ -6,461 +6,463 @@ import { RequirementSlotCard } from '../../components/intake/RequirementSlotCard
 import type { RequirementSlot, RequirementSlotId, UploadedFile } from '../../types/intake';
 import { ApiService } from '../../services/api';
 
+// ─── Agent metadata ──────────────────────────────────────────────────────────
+const AGENT_META: Record<string, { emoji: string; label: string; description: string }> = {
+    IntakeAgent:        { emoji: '📋', label: 'Intake Agent',         description: 'Verifying uploaded documents in storage slots' },
+    DocIntelAgent:      { emoji: '🔍', label: 'Doc Intel Agent',      description: 'Extracting text via OCR from all uploaded files' },
+    MedicalCodingAgent: { emoji: '🧬', label: 'Medical Coding Agent', description: 'Inferring ICD-10 and CPT codes with Gemini AI' },
+    InsuranceAgent:     { emoji: '🏥', label: 'Insurance Agent',      description: 'Resolving insurance policies for this patient' },
+    COBAgent:           { emoji: '⚖️', label: 'COB Agent',            description: 'Coordinating benefits across primary & secondary plans' },
+    FinanceAgent:       { emoji: '💰', label: 'Finance Agent',        description: 'Computing audited financial breakdown & deductibles' },
+    ReviewerAgent:      { emoji: '🔎', label: 'Reviewer Agent',       description: 'Quality auditing pipeline outputs and confidence scores' },
+    ClinicianAuditor:   { emoji: '👨‍⚕️', label: 'Clinician Auditor',    description: 'Manual clinical sign-off' },
+};
+
+interface AgentFeedEntry {
+    agentName: string;
+    status: 'running' | 'success' | 'retry' | 'error';
+    message: string;
+    timestamp: string;
+}
+
 export const IntakePage: React.FC = () => {
     const navigate = useNavigate();
-    
-    // Predefined requirement slots
+
     const requirementSlots: RequirementSlot[] = [
-        {
-            id: 'priya_pt_invoice',
-            title: 'Priya PT Invoice',
-            description: 'Physical therapy invoice containing detailed billing codes, sessions, and amounts.',
-            allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'],
-        },
-        {
-            id: 'aarav_mri_report',
-            title: 'Aarav MRI Report',
-            description: 'Magnetic resonance imaging radiology report highlighting medical findings.',
-            allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'],
-        },
-        {
-            id: 'surgeon_estimate',
-            title: 'Surgeon Estimate',
-            description: 'Fee estimate sheet detailing the surgery procedure codes, facility costs, and provider pricing.',
-            allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'],
-        },
-        {
-            id: 'user_query_transcript',
-            title: 'User Query Transcript',
-            description: 'A text transcript containing the user coordination query or benefit question.',
-            allowedFormats: ['.txt', '.pdf'],
-        },
+        { id: 'priya_pt_invoice',       title: 'Priya PT Invoice',       description: 'Physical therapy invoice with billing codes, sessions, and amounts.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'aarav_mri_report',        title: 'Aarav MRI Report',        description: 'Radiology MRI report highlighting medical findings.',                  allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'surgeon_estimate',        title: 'Surgeon Estimate',        description: 'Fee estimate with procedure codes, facility costs, and pricing.',       allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'user_query_transcript',   title: 'User Query Transcript',   description: 'Text transcript containing the benefit coordination query.',            allowedFormats: ['.txt', '.pdf'] },
     ];
 
-    // State to hold the files satisfying each slot
     const [uploadedFiles, setUploadedFiles] = useState<Record<RequirementSlotId, UploadedFile | undefined>>({
-        priya_pt_invoice: undefined,
-        aarav_mri_report: undefined,
-        surgeon_estimate: undefined,
-        user_query_transcript: undefined,
+        priya_pt_invoice: undefined, aarav_mri_report: undefined,
+        surgeon_estimate: undefined, user_query_transcript: undefined,
     });
-
-    // Analysis coordination states
     const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'awaiting_approval' | 'completed' | 'failed'>('idle');
-    const [progress, setProgress] = useState(0);
-    const [phaseMessage, setPhaseMessage] = useState('');
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [failedAgent, setFailedAgent] = useState<string | null>(null);
-    const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
-    const [activeJobId, setActiveJobId] = useState<string | null>(null);
+    const [progress, setProgress]             = useState(0);
+    const [phaseMessage, setPhaseMessage]     = useState('');
+    const [errorMessage, setErrorMessage]     = useState<string | null>(null);
+    const [failedAgent, setFailedAgent]       = useState<string | null>(null);
+    const [ocrEngine, setOcrEngine]           = useState<'library' | 'gemini'>('library');
+    const [activeJobId, setActiveJobId]       = useState<string | null>(null);
+    const [currentAgent, setCurrentAgent]     = useState<string | null>(null);
+    const [agentFeed, setAgentFeed]           = useState<AgentFeedEntry[]>([]);
+    const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
+    const feedBottomRef = useRef<HTMLDivElement>(null);
+    const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // Fetch existing files from backend storage on mount
+    // Fetch existing uploads on mount — sync only what's already on the backend (no auto-populate)
     useEffect(() => {
-        const fetchIntakeStatus = async () => {
-            try {
-                const syncedFiles = await ApiService.fetchIntakeStatus();
-                setUploadedFiles(syncedFiles);
-            } catch (err) {
-                console.warn('Could not sync files from backend on mount. Using local storage state.', err);
-            }
-        };
-        fetchIntakeStatus();
+        ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => {});
     }, []);
 
+    // Auto-scroll agent feed
+    useEffect(() => {
+        feedBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [agentFeed, currentAgent]);
+
     const handleUpload = async (file: File, slotId: RequirementSlotId) => {
-        // Set local state to uploading first
-        setUploadedFiles((prev) => ({
-            ...prev,
-            [slotId]: {
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                status: 'uploading',
-                slotId,
-            },
-        }));
-
+        setUploadedFiles(prev => ({ ...prev, [slotId]: { name: file.name, size: file.size, type: file.type, status: 'uploading', slotId } }));
         try {
-            const uploadedFile = await ApiService.uploadDocument(file, slotId);
-            setUploadedFiles((prev) => ({
-                ...prev,
-                [slotId]: uploadedFile,
-            }));
+            const uploaded = await ApiService.uploadDocument(file, slotId);
+            setUploadedFiles(prev => ({ ...prev, [slotId]: uploaded }));
         } catch (err: any) {
-            let errorMsg = 'Upload failed. Please check network connection.';
-            
-            if (axios.isAxiosError(err)) {
-                if (err.response) {
-                    // Extract validation error message from starlette/fastapi error schema
-                    errorMsg = err.response.data?.detail || `Server returned error status ${err.response.status}`;
-                } else if (err.request) {
-                    errorMsg = 'No response received from the backend server.';
-                }
-            }
-            
-            console.warn(`Backend upload failed for ${slotId}: ${errorMsg}`, err);
-
-            setUploadedFiles((prev) => ({
-                ...prev,
-                [slotId]: {
-                    name: file.name,
-                    size: file.size,
-                    type: file.type,
-                    status: 'error',
-                    slotId,
-                    errorMsg,
-                },
-            }));
+            let errorMsg = 'Upload failed. Check your network connection.';
+            if (axios.isAxiosError(err) && err.response) errorMsg = err.response.data?.detail || `Server error ${err.response.status}`;
+            else if (axios.isAxiosError(err) && err.request) errorMsg = 'No response from backend server.';
+            setUploadedFiles(prev => ({ ...prev, [slotId]: { name: file.name, size: file.size, type: file.type, status: 'error', slotId, errorMsg } }));
         }
     };
 
     const handleRemove = async (slotId: RequirementSlotId) => {
-        // Optimistically remove locally
-        setUploadedFiles((prev) => ({
-            ...prev,
-            [slotId]: undefined,
-        }));
+        setUploadedFiles(prev => ({ ...prev, [slotId]: undefined }));
+        try { await ApiService.deleteDocument(slotId); } catch { /* silent */ }
+    };
 
-        try {
-            await ApiService.deleteDocument(slotId);
-        } catch (err) {
-            console.warn(`Backend deletion failed for slot ${slotId}.`, err);
-        }
+    const addFeedEntry = (entry: AgentFeedEntry) => {
+        setAgentFeed(prev => {
+            const filtered = prev.filter(e => !(e.agentName === entry.agentName && e.status === 'running'));
+            return [...filtered, entry];
+        });
+    };
+
+    const buildPollingLoop = (job_id: string, seenAgents: Set<string>) => {
+        return setInterval(async () => {
+            try {
+                const res = await ApiService.getAnalysisStatus(job_id);
+                const { status: jobStatus, progress_percent, message, error_details, current_agent: activeAgent, warnings } = res;
+
+                setProgress(progress_percent);
+                setPhaseMessage(message);
+                if (activeAgent !== undefined) setCurrentAgent(activeAgent ?? null);
+
+                // Detect completed agents from message
+                const completedMatch = Object.keys(AGENT_META).find(
+                    name => message.includes(name + ':') && !seenAgents.has(name)
+                );
+                if (completedMatch) {
+                    seenAgents.add(completedMatch);
+                    const isRetry = message.toLowerCase().includes('retry') || message.toLowerCase().includes('backtrack');
+                    const isError = message.toLowerCase().includes('failed') || message.toLowerCase().includes('error');
+                    addFeedEntry({ agentName: completedMatch, status: isError ? 'error' : isRetry ? 'retry' : 'success', message, timestamp: new Date().toLocaleTimeString() });
+                    setCurrentAgent(null);
+                }
+
+                if (jobStatus === 'completed') {
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                    setCurrentAgent(null);
+                    setAnalysisStatus('completed');
+                    setTimeout(() => navigate(`/results?job_id=${job_id}`), 600);
+                } else if (jobStatus === 'awaiting_approval') {
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                    setCurrentAgent(null);
+                    setReviewWarnings(warnings || []);
+                    setAnalysisStatus('awaiting_approval');
+                } else if (jobStatus === 'failed') {
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                    setCurrentAgent(null);
+                    setAnalysisStatus('failed');
+                    setErrorMessage(message || error_details || 'Pipeline failed.');
+                }
+            } catch {
+                if (intervalRef.current) clearInterval(intervalRef.current);
+                setAnalysisStatus('failed');
+                setErrorMessage('Lost connection to backend while polling. Please retry.');
+            }
+        }, 1200);
     };
 
     const startAssessment = async () => {
         setAnalysisStatus('starting');
-        setProgress(10);
-        setPhaseMessage('Contacting backend Benefit Orchestrator...');
-
+        setProgress(5);
+        setAgentFeed([]);
+        setCurrentAgent(null);
+        setReviewWarnings([]);
+        setPhaseMessage('Contacting backend orchestrator...');
         try {
-            // 1. Post to start analysis
             const { job_id } = await ApiService.startAnalysis(ocrEngine);
             setActiveJobId(job_id);
             setAnalysisStatus('processing');
-
-            // 2. Poll job status
-            const interval = setInterval(async () => {
-                try {
-                    const { status: jobStatus, progress_percent, message, error_details } = await ApiService.getAnalysisStatus(job_id);
-
-                    setProgress(progress_percent);
-                    setPhaseMessage(message);
-
-                    if (jobStatus === 'completed') {
-                        clearInterval(interval);
-                        setAnalysisStatus('completed');
-                        setTimeout(() => {
-                            navigate(`/results?job_id=${job_id}`);
-                        }, 500);
-                    } else if (jobStatus === 'awaiting_approval') {
-                        setAnalysisStatus('awaiting_approval');
-                    } else if (jobStatus === 'failed') {
-                        clearInterval(interval);
-                        setAnalysisStatus('failed');
-                        setErrorMessage(message || error_details || 'Pipeline failed. Check backend logs for details.');
-                    } else if (jobStatus === 'processing') {
-                        setAnalysisStatus('processing');
-                    }
-                } catch (pollErr: any) {
-                    clearInterval(interval);
-                    console.error('Polling check failed:', pollErr);
-                    setAnalysisStatus('failed');
-                    setErrorMessage('Lost connection to backend while polling analysis status. Please retry.');
-                }
-            }, 1200);
+            intervalRef.current = buildPollingLoop(job_id, new Set<string>());
         } catch (err: any) {
-            console.error('Backend server not responding:', err);
             setAnalysisStatus('failed');
             const detail = err?.response?.data?.detail;
-            setErrorMessage(typeof detail === 'string' ? detail : 'Backend server is not responding. Ensure the server is running on port 8000.');
+            setErrorMessage(typeof detail === 'string' ? detail : 'Backend is not responding. Ensure it is running on port 8000.');
         }
     };
 
     const resetWorkspace = async () => {
-        // Clear all files on backend
-        const slotsToClear = Object.keys(uploadedFiles) as RequirementSlotId[];
-        for (const slotId of slotsToClear) {
-            if (uploadedFiles[slotId]) {
-                try {
-                    await ApiService.deleteDocument(slotId);
-                } catch (err) {
-                    console.warn(`Failed to clean backend storage slot ${slotId} on reset.`, err);
-                }
-            }
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        for (const slotId of Object.keys(uploadedFiles) as RequirementSlotId[]) {
+            if (uploadedFiles[slotId]) try { await ApiService.deleteDocument(slotId); } catch { /* silent */ }
         }
-
-        setUploadedFiles({
-            priya_pt_invoice: undefined,
-            aarav_mri_report: undefined,
-            surgeon_estimate: undefined,
-            user_query_transcript: undefined,
-        });
+        setUploadedFiles({ priya_pt_invoice: undefined, aarav_mri_report: undefined, surgeon_estimate: undefined, user_query_transcript: undefined });
         setAnalysisStatus('idle');
         setProgress(0);
         setPhaseMessage('');
+        setAgentFeed([]);
+        setCurrentAgent(null);
+        setReviewWarnings([]);
     };
 
-    // Compute metrics
-    const activeFiles = Object.values(uploadedFiles).filter((f) => f && f.status === 'ready') as UploadedFile[];
-    const isWorkspaceEmpty = Object.values(uploadedFiles).filter(Boolean).length === 0;
-    const isAllUploaded = requirementSlots.every((slot) => uploadedFiles[slot.id]?.status === 'ready');
+    const activeFiles   = Object.values(uploadedFiles).filter(f => f?.status === 'ready') as UploadedFile[];
+    const isAllUploaded = requirementSlots.every(s => uploadedFiles[s.id]?.status === 'ready');
+    const isNoneUploaded = activeFiles.length === 0;
 
-    // Render failed state
+    // ── FAILED ──────────────────────────────────────────────────────────────
     if (analysisStatus === 'failed') {
         return (
             <PageContainer className="max-w-xl py-16">
-                <div className="rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-md">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-8 w-8">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-                        </svg>
-                    </div>
-
-                    <h2 className="mt-6 text-xl font-bold text-slate-900">Pipeline Failed</h2>
-                    <p className="mt-1.5 text-xs text-slate-400 font-semibold tracking-wide uppercase">Multi-Agent Orchestration Error</p>
-
+                <div style={{ borderRadius: 20, border: '1px solid #fecaca', background: '#fff', padding: 32, textAlign: 'center', boxShadow: '0 2px 16px rgba(0,0,0,0.06)' }}>
+                    <div style={{ margin: '0 auto', width: 64, height: 64, borderRadius: '50%', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>❌</div>
+                    <h2 style={{ marginTop: 20, fontSize: 20, fontWeight: 700, color: '#111', margin: '16px 0 4px' }}>Pipeline Failed</h2>
+                    <p style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>Multi-Agent Orchestration Error</p>
                     {failedAgent && (
-                        <div className="mt-4 inline-flex items-center rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 ring-1 ring-inset ring-rose-600/10">
+                        <div style={{ display: 'inline-block', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700, color: '#b91c1c', marginBottom: 12 }}>
                             Failed at: {failedAgent}
                         </div>
                     )}
-
-                    <p className="mt-4 text-sm font-medium text-rose-700 bg-rose-50 border border-rose-100 rounded-xl py-3.5 px-5">
+                    <p style={{ fontSize: 13, fontWeight: 500, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '14px 20px', margin: '0 0 20px' }}>
                         {errorMessage || 'An unknown error occurred during pipeline execution.'}
                     </p>
-
-                    <div className="mt-6 flex justify-center gap-3">
-                        <button
-                            onClick={() => {
-                                setAnalysisStatus('idle');
-                                setProgress(0);
-                                setPhaseMessage('');
-                                setErrorMessage(null);
-                                setFailedAgent(null);
-                            }}
-                            type="button"
-                            className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
-                        >
-                            Retry Assessment
-                        </button>
-                    </div>
+                    <button onClick={() => { setAnalysisStatus('idle'); setProgress(0); setPhaseMessage(''); setErrorMessage(null); setFailedAgent(null); setAgentFeed([]); setCurrentAgent(null); }}
+                        style={{ borderRadius: 8, background: '#2563eb', color: '#fff', border: 'none', padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        Retry Assessment
+                    </button>
                 </div>
             </PageContainer>
         );
     }
 
-    // Render Loading / Progress state
+    // ── PROCESSING / AWAITING APPROVAL ──────────────────────────────────────
     if (analysisStatus === 'starting' || analysisStatus === 'processing' || analysisStatus === 'awaiting_approval') {
+        const isApproval = analysisStatus === 'awaiting_approval';
         return (
-            <PageContainer className="max-w-xl py-16">
-                <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-md">
-                    {analysisStatus === 'awaiting_approval' ? (
-                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-50 text-amber-500 text-2xl">
-                            ⚠️
-                        </div>
-                    ) : (
-                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                            <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                        </div>
-                    )}
+            <PageContainer className="max-w-2xl py-10">
+                <div style={{ borderRadius: 20, border: `1px solid ${isApproval ? '#fde68a' : '#e2e8f0'}`, background: '#fff', padding: '28px 32px', boxShadow: '0 2px 16px rgba(0,0,0,0.06)' }}>
 
-                    <h2 className="mt-6 text-xl font-bold text-slate-900">
-                        {analysisStatus === 'awaiting_approval' ? 'Clinician Sign-off Required' : 'Analyzing Benefits'}
-                    </h2>
-                    <p className="mt-1.5 text-xs text-slate-400 font-semibold tracking-wide uppercase">
-                        {analysisStatus === 'awaiting_approval' ? 'Reviewer Agent Flagged Quality Checks' : 'Orchestrating AI Agents via Google ADK'}
-                    </p>
+                    {/* Header */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+                        <div style={{ width: 48, height: 48, borderRadius: '50%', background: isApproval ? '#fef3c7' : '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+                            {isApproval ? '⚠️' : (
+                                <svg style={{ width: 24, height: 24, color: '#2563eb', animation: 'spin 1s linear infinite' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                            )}
+                        </div>
+                        <div>
+                            <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                                {isApproval ? 'Clinician Sign-off Required' : 'Analyzing Benefits'}
+                            </h2>
+                            <p style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '2px 0 0' }}>
+                                {isApproval ? 'Reviewer Agent Flagged Issues — Action Required' : 'Orchestrating AI Agents via Google ADK'}
+                            </p>
+                        </div>
+                    </div>
 
                     {/* Progress Bar */}
-                    <div className="mt-8">
-                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                            <div
-                                className={`h-full transition-all duration-500 rounded-full ${analysisStatus === 'awaiting_approval' ? 'bg-amber-550' : 'bg-blue-600'}`}
-                                style={{ width: `${progress}%` }}
-                            />
+                    <div style={{ marginBottom: 20 }}>
+                        <div style={{ height: 8, borderRadius: 99, background: '#f1f5f9', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', borderRadius: 99, transition: 'width 0.7s ease', width: `${progress}%`, background: isApproval ? '#f59e0b' : 'linear-gradient(90deg, #3b82f6, #6366f1)' }} />
                         </div>
-                        <div className="mt-2.5 flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                            <span>Progress</span>
-                            <span>{progress}%</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                            <span>Progress</span><span>{progress}%</span>
                         </div>
                     </div>
 
-                    {/* Current Phase Message */}
-                    <p className={`mt-6 text-sm font-medium border rounded-xl py-3.5 px-5 ${
-                        analysisStatus === 'awaiting_approval'
-                            ? 'text-amber-800 bg-amber-50/50 border-amber-200/50'
-                            : 'text-slate-650 bg-slate-50 border-slate-100'
-                    }`}>
-                        {phaseMessage}
-                    </p>
-
-                    {/* Clinician Approval Actions */}
-                    {analysisStatus === 'awaiting_approval' && activeJobId && (
-                        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-                            <button
-                                onClick={async () => {
-                                    try {
-                                        setPhaseMessage('Approving claim and finalizing reports...');
-                                        await ApiService.approveAnalysis(activeJobId);
-                                    } catch (err: any) {
-                                        console.error('Approve failed:', err);
-                                        setErrorMessage('Failed to sign off manual approval. Please retry.');
-                                        setAnalysisStatus('failed');
-                                    }
-                                }}
-                                type="button"
-                                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors cursor-pointer"
-                            >
-                                Approve Claim
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    try {
-                                        setPhaseMessage('Rejecting current extraction. Triggering pipeline reflection...');
-                                        await ApiService.rejectAnalysis(activeJobId);
-                                    } catch (err: any) {
-                                        console.error('Reject failed:', err);
-                                        setErrorMessage('Failed to submit reject feedback. Please retry.');
-                                        setAnalysisStatus('failed');
-                                    }
-                                }}
-                                type="button"
-                                className="rounded-lg bg-rose-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-rose-700 transition-colors cursor-pointer"
-                            >
-                                Reject & Refine
-                            </button>
+                    {/* Live Agent Feed */}
+                    <div style={{ borderRadius: 12, border: '1px solid #e2e8f0', background: '#f8fafc', overflow: 'hidden', marginBottom: 16 }}>
+                        <div style={{ padding: '8px 14px', borderBottom: '1px solid #e2e8f0', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                            Live Agent Feed
                         </div>
+                        <div style={{ maxHeight: 240, overflowY: 'auto', padding: '4px 0' }}>
+                            {agentFeed.length === 0 && !currentAgent && (
+                                <div style={{ padding: '12px 16px', fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>Waiting for first agent to start...</div>
+                            )}
+                            {agentFeed.map((entry, i) => {
+                                const meta  = AGENT_META[entry.agentName] || { emoji: '🤖', label: entry.agentName, description: '' };
+                                const clr   = entry.status === 'success' ? '#16a34a' : entry.status === 'retry' ? '#d97706' : '#dc2626';
+                                const bg    = entry.status === 'success' ? '#f0fdf4' : entry.status === 'retry' ? '#fffbeb' : '#fef2f2';
+                                const badge = entry.status === 'success' ? '✅ Done' : entry.status === 'retry' ? '🔄 Retried' : '❌ Error';
+                                return (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 14px', borderBottom: '1px solid #f1f5f9' }}>
+                                        <span style={{ fontSize: 16, flexShrink: 0, marginTop: 2 }}>{meta.emoji}</span>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                <span style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>{meta.label}</span>
+                                                <span style={{ fontSize: 10, fontWeight: 700, color: clr, background: bg, border: `1px solid ${clr}33`, borderRadius: 20, padding: '1px 7px', flexShrink: 0 }}>{badge}</span>
+                                                <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 'auto' }}>{entry.timestamp}</span>
+                                            </div>
+                                            <p style={{ fontSize: 11, color: '#475569', margin: '3px 0 0', lineHeight: 1.5, wordBreak: 'break-word' }}>{entry.message}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {currentAgent && !isApproval && (
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 14px', background: '#eff6ff' }}>
+                                    <span style={{ fontSize: 16, flexShrink: 0, marginTop: 2 }}>{AGENT_META[currentAgent]?.emoji || '🤖'}</span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <span style={{ fontSize: 12, fontWeight: 700, color: '#1e40af' }}>{AGENT_META[currentAgent]?.label || currentAgent}</span>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, color: '#2563eb', background: '#dbeafe', border: '1px solid #bfdbfe', borderRadius: 20, padding: '1px 7px' }}>
+                                                <svg style={{ width: 8, height: 8, animation: 'spin 1s linear infinite', display: 'inline' }} viewBox="0 0 24 24" fill="none">
+                                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }} />
+                                                    <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" style={{ opacity: 0.75 }} />
+                                                </svg>
+                                                RUNNING
+                                            </span>
+                                        </div>
+                                        <p style={{ fontSize: 11, color: '#3b82f6', margin: '3px 0 0' }}>{AGENT_META[currentAgent]?.description}</p>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={feedBottomRef} />
+                        </div>
+                    </div>
+
+                    {/* Phase message (only during processing) */}
+                    {!isApproval && (
+                        <p style={{ fontSize: 12, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', margin: '0 0 4px', lineHeight: 1.5 }}>
+                            {phaseMessage}
+                        </p>
+                    )}
+
+                    {/* ── APPROVAL PANEL ──────────────────────────────────────────── */}
+                    {isApproval && (
+                        <>
+                            <div style={{ borderRadius: 14, border: '1px solid #fde68a', background: '#fffbeb', padding: 20, marginBottom: 14 }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#92400e', margin: '0 0 8px' }}>⚠️ Why is approval needed?</h3>
+                                <p style={{ fontSize: 12, color: '#78350f', margin: '0 0 14px', lineHeight: 1.7 }}>
+                                    The <strong>Reviewer Agent</strong> completed its quality audit and flagged the issues below. These are <em>not</em> pipeline errors — they are confidence or consistency flags that need a human to verify before the final report is locked.
+                                </p>
+                                {reviewWarnings.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 14 }}>
+                                        {reviewWarnings.map((w, i) => {
+                                            const isLow = w.toLowerCase().includes('low confidence');
+                                            const isPol = w.includes('[Policy Inconsistency]');
+                                            const isCod = w.includes('[Coding Inconsistency]');
+                                            const clr    = isLow ? '#dc2626' : isPol ? '#7c3aed' : isCod ? '#d97706' : '#475569';
+                                            const bg     = isLow ? '#fef2f2' : isPol ? '#f5f3ff' : isCod ? '#fffbeb' : '#f8fafc';
+                                            const border = isLow ? '#fecaca' : isPol ? '#ddd6fe' : isCod ? '#fde68a' : '#e2e8f0';
+                                            const tag    = isLow ? '🔴 Low Confidence' : isPol ? '🟣 Policy Inconsistency' : isCod ? '🟠 Coding Inconsistency' : '⚪ Note';
+                                            return (
+                                                <div key={i} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '9px 13px' }}>
+                                                    <span style={{ fontSize: 10, fontWeight: 700, color: clr, display: 'block', marginBottom: 4 }}>{tag}</span>
+                                                    <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.6 }}>{w.replace('[Policy Inconsistency] ', '').replace('[Coding Inconsistency] ', '')}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic', marginBottom: 14 }}>No specific warnings returned — generic quality check flagged.</p>
+                                )}
+
+                                <div style={{ borderTop: '1px solid #fde68a', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                                    <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12, color: '#374151' }}>
+                                        <span style={{ background: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: 20, padding: '2px 9px', fontWeight: 700, fontSize: 10, flexShrink: 0, marginTop: 1 }}>APPROVE</span>
+                                        <span>Accept the current codes and <strong>generate the final COB report now</strong>. Use this if the flagged issues are acceptable for this clinical case.</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12, color: '#374151' }}>
+                                        <span style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: 20, padding: '2px 9px', fontWeight: 700, fontSize: 10, flexShrink: 0, marginTop: 1 }}>REJECT</span>
+                                        <span>Send the flags above back to <strong>Gemini as a reflection prompt</strong> — the Medical Coding Agent re-runs and tries to fix the specific issues.</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {activeJobId && (
+                                <div style={{ display: 'flex', gap: 10 }}>
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                setPhaseMessage('Approving claim and finalizing reports...');
+                                                await ApiService.approveAnalysis(activeJobId);
+                                                setAnalysisStatus('processing');
+                                                intervalRef.current = setInterval(async () => {
+                                                    const r = await ApiService.getAnalysisStatus(activeJobId);
+                                                    setProgress(r.progress_percent);
+                                                    setPhaseMessage(r.message);
+                                                    if (r.status === 'completed') {
+                                                        if (intervalRef.current) clearInterval(intervalRef.current);
+                                                        setTimeout(() => navigate(`/results?job_id=${activeJobId}`), 500);
+                                                    }
+                                                }, 1000);
+                                            } catch {
+                                                setErrorMessage('Failed to approve. Please retry.');
+                                                setAnalysisStatus('failed');
+                                            }
+                                        }}
+                                        style={{ flex: 1, borderRadius: 10, background: '#059669', color: '#fff', border: 'none', padding: '12px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                                        ✅ Approve Claim
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                setPhaseMessage('Sending rejection + reflection prompt to Gemini...');
+                                                setAgentFeed([]);
+                                                setCurrentAgent(null);
+                                                await ApiService.rejectAnalysis(activeJobId);
+                                                setAnalysisStatus('processing');
+                                                setProgress(40);
+                                                intervalRef.current = buildPollingLoop(activeJobId, new Set<string>());
+                                            } catch {
+                                                setErrorMessage('Failed to submit rejection. Please retry.');
+                                                setAnalysisStatus('failed');
+                                            }
+                                        }}
+                                        style={{ flex: 1, borderRadius: 10, background: '#dc2626', color: '#fff', border: 'none', padding: '12px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                                        🔄 Reject &amp; Refine
+                                    </button>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
+                <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
             </PageContainer>
         );
     }
 
-    // Render default Workspace
+    // ── DEFAULT WORKSPACE ────────────────────────────────────────────────────
     return (
         <PageContainer className="max-w-4xl">
-            {/* Page Header */}
-            <div className="border-b border-slate-200 pb-5 mb-8">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">Document Intake Workspace</h1>
-                <p className="text-sm text-slate-550 mt-1">
-                    Prepare and organize the required medical and estimate files before launching the Coordination of Benefits (COB) analysis.
+            <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: 20, marginBottom: 32 }}>
+                <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>Document Intake Workspace</h1>
+                <p style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                    Upload all 4 required medical documents to begin the Coordination of Benefits analysis.
                 </p>
             </div>
 
-            <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-                        Required Documents List
-                    </h2>
-                    <div className="flex items-center gap-4">
-                        {!isWorkspaceEmpty && (
-                            <button
-                                onClick={resetWorkspace}
-                                type="button"
-                                className="text-xs font-bold text-rose-600 hover:text-rose-700 transition-colors cursor-pointer"
-                            >
-                                Clear All
-                            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <h2 style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Required Documents</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        {activeFiles.length > 0 && (
+                            <button onClick={resetWorkspace} style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear All</button>
                         )}
-                        <span className="text-xs font-semibold text-slate-400">
-                            {activeFiles.length} of {requirementSlots.length} Satisfied
-                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>{activeFiles.length} of {requirementSlots.length} Satisfied</span>
                     </div>
                 </div>
 
-                {/* Requirements Grid */}
-                <div className="grid gap-6 sm:grid-cols-2">
-                    {requirementSlots.map((slot) => (
-                        <RequirementSlotCard
-                            key={slot.id}
-                            slot={slot}
-                            file={uploadedFiles[slot.id]}
-                            onUpload={handleUpload}
-                            onRemove={handleRemove}
-                        />
+                {/* Empty state */}
+                {isNoneUploaded && (
+                    <div style={{ borderRadius: 14, border: '1px solid #bfdbfe', background: '#eff6ff', padding: '14px 18px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                        <span style={{ fontSize: 20, flexShrink: 0 }}>📂</span>
+                        <div>
+                            <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 4px' }}>No documents uploaded yet</p>
+                            <p style={{ fontSize: 12, color: '#3b82f6', margin: 0 }}>
+                                Please upload all 4 required documents below. Analysis cannot start until all slots are satisfied — <strong>no sample files are loaded automatically</strong>.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+                    {requirementSlots.map(slot => (
+                        <RequirementSlotCard key={slot.id} slot={slot} file={uploadedFiles[slot.id]} onUpload={handleUpload} onRemove={handleRemove} />
                     ))}
                 </div>
 
-                {/* Intake guidelines panel */}
-                <div className="rounded-xl border border-slate-150 bg-slate-50/50 p-4 text-xs text-slate-500">
-                    <h3 className="font-semibold text-slate-700 mb-1.5 uppercase tracking-wider text-[10px]">
-                        Intake Guidelines
-                    </h3>
-                    <ul className="space-y-1 list-disc pl-4">
-                        <li>Drag and drop files directly onto each card, or click a card to choose files.</li>
-                        <li>Only one file can occupy each requirement card at a time.</li>
-                        <li>Files are securely uploaded and stored in the backend service for analysis.</li>
-                        <li><strong className="text-slate-700">Currency Requirement:</strong> Please ensure that all uploaded invoices, estimate sheets, and documents list financial amounts in <strong className="text-slate-700">Indian Rupees (INR / ₹)</strong>.</li>
+                {/* Guidelines */}
+                <div style={{ borderRadius: 12, border: '1px solid #f1f5f9', background: '#f8fafc', padding: 16 }}>
+                    <h3 style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Intake Guidelines</h3>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#64748b', lineHeight: 1.9 }}>
+                        <li>Drag and drop files onto each card, or click to choose a file.</li>
+                        <li>Only one file can occupy each slot at a time.</li>
+                        <li>Files are uploaded to the backend before analysis begins.</li>
+                        <li><strong style={{ color: '#374151' }}>Currency:</strong> All invoices and estimates must list amounts in <strong style={{ color: '#374151' }}>Indian Rupees (INR / ₹)</strong>.</li>
                     </ul>
                 </div>
 
-                {/* Ready to Process Status Banner */}
+                {/* All-uploaded banner + Start */}
                 {isAllUploaded && (
-                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-5 mt-6 transition-all">
-                        <div className="flex items-start gap-3">
-                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    strokeWidth={2.5}
-                                    stroke="currentColor"
-                                    className="h-3.5 w-3.5"
-                                >
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                </svg>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <h4 className="text-sm font-bold text-slate-900">Intake Workspace Satisfied</h4>
-                                <p className="text-xs text-slate-550 mt-1">
-                                    All 4 required files have been verified. The orchestrator is prepared for Coordination of Benefits reasoning.
-                                </p>
-
-                                <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center">
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Image OCR Engine Choice</label>
-                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 w-fit">
-                                            <button
-                                                type="button"
-                                                onClick={() => setOcrEngine('library')}
-                                                className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all duration-200 cursor-pointer ${
-                                                    ocrEngine === 'library'
-                                                        ? 'bg-white text-slate-800 shadow-sm border border-slate-200/50'
-                                                        : 'text-slate-500 hover:text-slate-800 border border-transparent'
-                                                }`}
-                                            >
-                                                Local OCR Library (Default)
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setOcrEngine('gemini')}
-                                                className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all duration-200 cursor-pointer ${
-                                                    ocrEngine === 'gemini'
-                                                        ? 'bg-white text-slate-800 shadow-sm border border-slate-200/50'
-                                                        : 'text-slate-500 hover:text-slate-800 border border-transparent'
-                                                }`}
-                                            >
-                                                Gemini Vision OCR
-                                            </button>
+                    <div style={{ borderRadius: 14, border: '1px solid #a7f3d0', background: '#f0fdf4', padding: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>✓</div>
+                            <div style={{ flex: 1 }}>
+                                <h4 style={{ fontSize: 14, fontWeight: 700, color: '#065f46', margin: '0 0 4px' }}>All 4 Documents Uploaded</h4>
+                                <p style={{ fontSize: 12, color: '#059669', margin: '0 0 16px' }}>The orchestrator is ready to begin Coordination of Benefits reasoning across 7 specialist AI agents.</p>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
+                                    <div>
+                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Image OCR Engine</label>
+                                        <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 3, gap: 3, border: '1px solid #cbd5e1' }}>
+                                            {(['library', 'gemini'] as const).map(eng => (
+                                                <button key={eng} type="button" onClick={() => setOcrEngine(eng)}
+                                                    style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: ocrEngine === eng ? '1px solid #cbd5e1' : '1px solid transparent', background: ocrEngine === eng ? '#fff' : 'transparent', color: ocrEngine === eng ? '#1e293b' : '#64748b', boxShadow: ocrEngine === eng ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
+                                                    {eng === 'library' ? 'Local OCR (Default)' : 'Gemini Vision OCR'}
+                                                </button>
+                                            ))}
                                         </div>
                                     </div>
-
-                                    <div className="flex items-center gap-3 self-end sm:mb-[2px]">
-                                        <button
-                                            onClick={startAssessment}
-                                            type="button"
-                                            className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
-                                        >
-                                            Start Assessment
-                                        </button>
-                                        <span className="text-[10px] font-medium text-slate-400">
-                                            (Orchestrates specialist agents)
-                                        </span>
-                                    </div>
+                                    <button onClick={startAssessment} type="button"
+                                        style={{ borderRadius: 10, background: '#2563eb', color: '#fff', border: 'none', padding: '10px 22px', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'background 0.15s' }}
+                                        onMouseEnter={e => (e.currentTarget.style.background = '#1d4ed8')}
+                                        onMouseLeave={e => (e.currentTarget.style.background = '#2563eb')}>
+                                        🚀 Start Assessment
+                                    </button>
+                                    <span style={{ fontSize: 11, color: '#94a3b8' }}>Orchestrates 7 specialist agents</span>
                                 </div>
                             </div>
                         </div>

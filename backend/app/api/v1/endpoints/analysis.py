@@ -38,6 +38,7 @@ async def start_analysis(payload: AnalysisStartRequest = None):
         "error_details": None,
         "state": None,
         "ocr_engine": ocr_engine,
+        "current_agent": None,
     }
 
     # Launch the orchestration pipeline as a background task
@@ -64,6 +65,11 @@ async def get_analysis_status(jobId: str):
         )
 
     job = jobs_db[jobId]
+    # Collect warnings from state if available (populated by ReviewerAgent)
+    state = job.get("state")
+    warnings = []
+    if state and hasattr(state, "warnings"):
+        warnings = state.warnings or []
     return AnalysisStatusResponse(
         job_id=job["job_id"],
         status=job["status"],
@@ -72,6 +78,8 @@ async def get_analysis_status(jobId: str):
         created_at=job["created_at"],
         completed_at=job.get("completed_at"),
         error_details=job.get("error_details"),
+        current_agent=job.get("current_agent"),
+        warnings=warnings,
     )
 
 
@@ -100,10 +108,17 @@ async def _run_orchestration(job_id: str) -> None:
     }
 
     async def on_agent_complete(agent_name: str, progress: int) -> None:
-        """Callback invoked after each agent succeeds — updates job progress in real-time."""
+        """Callback invoked after each agent succeeds — updates job progress and clears current_agent."""
         job["progress_percent"] = progress
         job["message"] = phase_messages.get(agent_name, f"{agent_name} completed.")
+        job["current_agent"] = None
         logger.info(f"[Job {job_id}] {agent_name} complete → {progress}%")
+
+    async def on_agent_start(agent_name: str) -> None:
+        """Callback invoked just before an agent begins executing — marks it as the active agent."""
+        job["current_agent"] = agent_name
+        job["message"] = f"{agent_name} is running..."
+        logger.info(f"[Job {job_id}] {agent_name} starting...")
 
     try:
         # Determine which member to use based on uploaded documents
@@ -121,6 +136,7 @@ async def _run_orchestration(job_id: str) -> None:
 
         orchestrator = get_orchestrator()
         orchestrator.set_progress_callback(on_agent_complete)
+        orchestrator.set_start_callback(on_agent_start)
 
         await orchestrator.execute(state, max_retries=1)
 

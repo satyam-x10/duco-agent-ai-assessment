@@ -85,10 +85,16 @@ class Orchestrator:
         self.agents_dict = {agent.name: agent for agent in agents}
         # Optional callback invoked after each agent completes successfully
         self._on_agent_complete: Optional[Callable[[str, int], Awaitable[None]]] = None
+        # Optional callback invoked just before each agent starts executing
+        self._on_agent_start: Optional[Callable[[str], Awaitable[None]]] = None
 
     def set_progress_callback(self, callback: Callable[[str, int], Awaitable[None]]) -> None:
         """Register an async callback that receives (agent_name, progress_percent) on success."""
         self._on_agent_complete = callback
+
+    def set_start_callback(self, callback: Callable[[str], Awaitable[None]]) -> None:
+        """Register an async callback that receives (agent_name) just before an agent starts."""
+        self._on_agent_start = callback
 
     def _evaluate_next_step(self, state: SharedWorkflowState, completed_agents: set) -> tuple:
         """Dynamic planner determining which agent to run next and the reasoning why."""
@@ -308,6 +314,12 @@ class Orchestrator:
                 while not success:
                     try:
                         append_realtime_log(f"[Agent Start] Executing {agent.name} (Attempt {retry_count + 1})...")
+                        # Fire start callback so frontend knows which agent is actively running
+                        if self._on_agent_start:
+                            try:
+                                await self._on_agent_start(agent.name)
+                            except Exception as cb_err:
+                                logger.warning(f"Start callback error: {cb_err}")
                         await agent.execute(state)
                         state.trace.append(
                             TraceEntry(
@@ -427,6 +439,12 @@ class Orchestrator:
                 while not success:
                     logger.info(f"Executing agent {agent.name} (Attempt {retry_count + 1})")
                     try:
+                        # Fire start callback
+                        if self._on_agent_start:
+                            try:
+                                await self._on_agent_start(agent.name)
+                            except Exception as cb_err:
+                                logger.warning(f"Start callback error: {cb_err}")
                         await agent.execute(state)
                         state.trace.append(
                             TraceEntry(

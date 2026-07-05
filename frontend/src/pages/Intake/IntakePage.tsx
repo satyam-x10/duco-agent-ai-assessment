@@ -8,14 +8,14 @@ import { ApiService } from '../../services/api';
 
 // ─── Agent metadata ──────────────────────────────────────────────────────────
 const AGENT_META: Record<string, { emoji: string; label: string; description: string }> = {
-    IntakeAgent:        { emoji: '📋', label: 'Intake Agent',         description: 'Verifying uploaded documents in storage slots' },
-    DocIntelAgent:      { emoji: '🔍', label: 'Doc Intel Agent',      description: 'Extracting text via OCR from all uploaded files' },
+    IntakeAgent: { emoji: '📋', label: 'Intake Agent', description: 'Verifying uploaded documents in storage slots' },
+    DocIntelAgent: { emoji: '🔍', label: 'Doc Intel Agent', description: 'Extracting text via OCR from all uploaded files' },
     MedicalCodingAgent: { emoji: '🧬', label: 'Medical Coding Agent', description: 'Inferring ICD-10 and CPT codes with Gemini AI' },
-    InsuranceAgent:     { emoji: '🏥', label: 'Insurance Agent',      description: 'Resolving insurance policies for this patient' },
-    COBAgent:           { emoji: '⚖️', label: 'COB Agent',            description: 'Coordinating benefits across primary & secondary plans' },
-    FinanceAgent:       { emoji: '💰', label: 'Finance Agent',        description: 'Computing audited financial breakdown & deductibles' },
-    ReviewerAgent:      { emoji: '🔎', label: 'Reviewer Agent',       description: 'Quality auditing pipeline outputs and confidence scores' },
-    ClinicianAuditor:   { emoji: '👨‍⚕️', label: 'Clinician Auditor',    description: 'Manual clinical sign-off' },
+    InsuranceAgent: { emoji: '🏥', label: 'Insurance Agent', description: 'Resolving insurance policies for this patient' },
+    COBAgent: { emoji: '⚖️', label: 'COB Agent', description: 'Coordinating benefits across primary & secondary plans' },
+    FinanceAgent: { emoji: '💰', label: 'Finance Agent', description: 'Computing audited financial breakdown & deductibles' },
+    ReviewerAgent: { emoji: '🔎', label: 'Reviewer Agent', description: 'Quality auditing pipeline outputs and confidence scores' },
+    ClinicianAuditor: { emoji: '👨‍⚕️', label: 'Clinician Auditor', description: 'Manual clinical sign-off' },
 };
 
 interface AgentFeedEntry {
@@ -29,10 +29,10 @@ export const IntakePage: React.FC = () => {
     const navigate = useNavigate();
 
     const requirementSlots: RequirementSlot[] = [
-        { id: 'priya_pt_invoice',       title: 'Priya PT Invoice',       description: 'Physical therapy invoice with billing codes, sessions, and amounts.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
-        { id: 'aarav_mri_report',        title: 'Aarav MRI Report',        description: 'Radiology MRI report highlighting medical findings.',                  allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
-        { id: 'surgeon_estimate',        title: 'Surgeon Estimate',        description: 'Fee estimate with procedure codes, facility costs, and pricing.',       allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
-        { id: 'user_query_transcript',   title: 'User Query Transcript',   description: 'Text transcript containing the benefit coordination query.',            allowedFormats: ['.txt', '.pdf'] },
+        { id: 'priya_pt_invoice', title: 'Priya PT Invoice', description: 'Physical therapy invoice with billing codes, sessions, and amounts.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'aarav_mri_report', title: 'Aarav MRI Report', description: 'Radiology MRI report highlighting medical findings.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'surgeon_estimate', title: 'Surgeon Estimate', description: 'Fee estimate with procedure codes, facility costs, and pricing.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'user_query_transcript', title: 'User Query Transcript', description: 'Text transcript containing the benefit coordination query.', allowedFormats: ['.txt', '.pdf'] },
     ];
 
     const [uploadedFiles, setUploadedFiles] = useState<Record<RequirementSlotId, UploadedFile | undefined>>({
@@ -40,21 +40,21 @@ export const IntakePage: React.FC = () => {
         surgeon_estimate: undefined, user_query_transcript: undefined,
     });
     const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'awaiting_approval' | 'completed' | 'failed'>('idle');
-    const [progress, setProgress]             = useState(0);
-    const [phaseMessage, setPhaseMessage]     = useState('');
-    const [errorMessage, setErrorMessage]     = useState<string | null>(null);
-    const [failedAgent, setFailedAgent]       = useState<string | null>(null);
-    const [ocrEngine, setOcrEngine]           = useState<'library' | 'gemini'>('library');
-    const [activeJobId, setActiveJobId]       = useState<string | null>(null);
-    const [currentAgent, setCurrentAgent]     = useState<string | null>(null);
-    const [agentFeed, setAgentFeed]           = useState<AgentFeedEntry[]>([]);
+    const [progress, setProgress] = useState(0);
+    const [phaseMessage, setPhaseMessage] = useState('');
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [failedAgent, setFailedAgent] = useState<string | null>(null);
+    const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
+    const [activeJobId, setActiveJobId] = useState<string | null>(null);
+    const [currentAgent, setCurrentAgent] = useState<string | null>(null);
+    const [agentFeed, setAgentFeed] = useState<AgentFeedEntry[]>([]);
     const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
     const feedBottomRef = useRef<HTMLDivElement>(null);
-    const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Fetch existing uploads on mount — sync only what's already on the backend (no auto-populate)
     useEffect(() => {
-        ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => {});
+        ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
     }, []);
 
     // Auto-scroll agent feed
@@ -166,7 +166,7 @@ export const IntakePage: React.FC = () => {
         setReviewWarnings([]);
     };
 
-    const activeFiles   = Object.values(uploadedFiles).filter(f => f?.status === 'ready') as UploadedFile[];
+    const activeFiles = Object.values(uploadedFiles).filter(f => f?.status === 'ready') as UploadedFile[];
     const isAllUploaded = requirementSlots.every(s => uploadedFiles[s.id]?.status === 'ready');
     const isNoneUploaded = activeFiles.length === 0;
 
@@ -242,9 +242,9 @@ export const IntakePage: React.FC = () => {
                                 <div style={{ padding: '12px 16px', fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>Waiting for first agent to start...</div>
                             )}
                             {agentFeed.map((entry, i) => {
-                                const meta  = AGENT_META[entry.agentName] || { emoji: '🤖', label: entry.agentName, description: '' };
-                                const clr   = entry.status === 'success' ? '#16a34a' : entry.status === 'retry' ? '#d97706' : '#dc2626';
-                                const bg    = entry.status === 'success' ? '#f0fdf4' : entry.status === 'retry' ? '#fffbeb' : '#fef2f2';
+                                const meta = AGENT_META[entry.agentName] || { emoji: '🤖', label: entry.agentName, description: '' };
+                                const clr = entry.status === 'success' ? '#16a34a' : entry.status === 'retry' ? '#d97706' : '#dc2626';
+                                const bg = entry.status === 'success' ? '#f0fdf4' : entry.status === 'retry' ? '#fffbeb' : '#fef2f2';
                                 const badge = entry.status === 'success' ? '✅ Done' : entry.status === 'retry' ? '🔄 Retried' : '❌ Error';
                                 return (
                                     <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 14px', borderBottom: '1px solid #f1f5f9' }}>
@@ -303,10 +303,10 @@ export const IntakePage: React.FC = () => {
                                             const isLow = w.toLowerCase().includes('low confidence');
                                             const isPol = w.includes('[Policy Inconsistency]');
                                             const isCod = w.includes('[Coding Inconsistency]');
-                                            const clr    = isLow ? '#dc2626' : isPol ? '#7c3aed' : isCod ? '#d97706' : '#475569';
-                                            const bg     = isLow ? '#fef2f2' : isPol ? '#f5f3ff' : isCod ? '#fffbeb' : '#f8fafc';
+                                            const clr = isLow ? '#dc2626' : isPol ? '#7c3aed' : isCod ? '#d97706' : '#475569';
+                                            const bg = isLow ? '#fef2f2' : isPol ? '#f5f3ff' : isCod ? '#fffbeb' : '#f8fafc';
                                             const border = isLow ? '#fecaca' : isPol ? '#ddd6fe' : isCod ? '#fde68a' : '#e2e8f0';
-                                            const tag    = isLow ? '🔴 Low Confidence' : isPol ? '🟣 Policy Inconsistency' : isCod ? '🟠 Coding Inconsistency' : '⚪ Note';
+                                            const tag = isLow ? '🔴 Low Confidence' : isPol ? '🟣 Policy Inconsistency' : isCod ? '🟠 Coding Inconsistency' : '⚪ Note';
                                             return (
                                                 <div key={i} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '9px 13px' }}>
                                                     <span style={{ fontSize: 10, fontWeight: 700, color: clr, display: 'block', marginBottom: 4 }}>{tag}</span>

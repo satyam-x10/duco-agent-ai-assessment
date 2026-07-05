@@ -41,6 +41,22 @@ class MedicalCodingAgent(Agent):
             aggregated_result.diagnoses.extend(result.diagnoses)
             aggregated_result.procedures.extend(result.procedures)
             
+        # Deduplicate diagnoses (keep the one with the highest confidence)
+        unique_diagnoses = {}
+        for diag in aggregated_result.diagnoses:
+            code = diag.code.strip().upper()
+            if code not in unique_diagnoses or diag.confidence > unique_diagnoses[code].confidence:
+                unique_diagnoses[code] = diag
+        aggregated_result.diagnoses = list(unique_diagnoses.values())
+
+        # Deduplicate procedures (keep the one with the highest confidence)
+        unique_procedures = {}
+        for proc in aggregated_result.procedures:
+            code = proc.code.strip().upper()
+            if code not in unique_procedures or proc.confidence > unique_procedures[code].confidence:
+                unique_procedures[code] = proc
+        aggregated_result.procedures = list(unique_procedures.values())
+            
         state.coding_result = aggregated_result
         logger.info(
             f"{self.name} completed coding. Extracted {len(state.coding_result.procedures)} procedures "

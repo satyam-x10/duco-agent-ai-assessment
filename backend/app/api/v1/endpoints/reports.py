@@ -144,12 +144,34 @@ async def get_report_summary(job_id: str):
         )
 
     # 7. Map per-procedure COB line-level coverage decisions for frontend transparency
+    cpt_description_fallback = {
+        "97161": "Physical Therapy Evaluation",
+        "97110": "Therapeutic Exercises",
+        "73721": "MRI Joint Lower Extremity",
+        "29881": "Arthroscopy knee meniscus repair",
+        "29888": "Arthroscopically aided ACL reconstruction",
+        "97140": "Manual Therapy Techniques",
+        "97112": "Neuromuscular Reeducation",
+        "29882": "Arthroscopy knee meniscus suture"
+    }
+
     cob_lines = []
     if state.cob_decision and state.cob_decision.lines_coverage:
         for line in state.cob_decision.lines_coverage:
+            # Find description of this CPT code from coding_result or fallback dictionary
+            description = ""
+            if state.coding_result and state.coding_result.procedures:
+                for proc in state.coding_result.procedures:
+                    if proc.code == line.cpt_code:
+                        description = proc.description
+                        break
+            if not description:
+                description = cpt_description_fallback.get(line.cpt_code, "Unrecognized Medical Procedure")
+
             cob_lines.append(
                 ClaimLineCoverageSchema(
                     cpt_code=line.cpt_code,
+                    description=description,
                     billed_amount=line.billed_amount,
                     is_primary_covered=line.primary_coverage.is_covered,
                     primary_deductible=line.primary_coverage.deductible_applied,

@@ -16,6 +16,15 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+def clear_realtime_log() -> None:
+    log_path = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "pipeline_realtime_trace.txt"
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write("")
+    except Exception as e:
+        logger.error(f"Failed to clear realtime log: {e}")
+
 def append_realtime_log(message: str) -> None:
     log_path = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "pipeline_realtime_trace.txt"
     timestamp = datetime.utcnow().isoformat() + "Z"

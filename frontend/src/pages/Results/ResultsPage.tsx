@@ -616,11 +616,16 @@ export const ResultsPage: React.FC = () => {
                     <div key={idx} className={`rounded-xl border ${borderColor} ${bgColor} p-4 transition-all hover:shadow-sm`}>
                       {/* Header row */}
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-300/50 font-mono">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-300/50 font-mono shrink-0">
                             {line.cpt_code}
                           </span>
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${statusColor}`}>
+                          {line.description && (
+                            <span className="text-[11.5px] font-bold text-slate-700 truncate max-w-[200px] sm:max-w-[320px] md:max-w-[400px]" title={line.description}>
+                              {line.description}
+                            </span>
+                          )}
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border shrink-0 ${statusColor}`}>
                             {statusIcon} {statusText}
                           </span>
                         </div>

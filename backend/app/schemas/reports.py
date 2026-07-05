@@ -45,6 +45,7 @@ class ClaimLineCoverageSchema(BaseModel):
     the financial math per line, and the denial/explanation reason.
     """
     cpt_code: str = Field(..., description="CPT procedure code")
+    description: str = Field("", description="Medical description of the procedure")
     billed_amount: float = Field(..., description="Original billed charge for this procedure")
     is_primary_covered: bool = Field(..., description="Whether the primary insurer covers this CPT code")
     primary_deductible: float = Field(0.0, description="Primary deductible applied to this line")

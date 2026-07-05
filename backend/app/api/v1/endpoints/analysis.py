@@ -97,6 +97,10 @@ async def _run_orchestration(job_id: str) -> None:
     if not job:
         return
 
+    # Clear the realtime trace log at the start of a new run
+    from app.core.adk import clear_realtime_log
+    clear_realtime_log()
+
     phase_messages = {
         "IntakeAgent": "IntakeAgent: Validated documents in storage slots.",
         "DocIntelAgent": "DocIntelAgent: Extracted text from all uploaded documents.",

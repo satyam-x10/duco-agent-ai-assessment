@@ -25,6 +25,10 @@ class COBAgent(Agent):
     async def execute(self, state: SharedWorkflowState) -> None:
         logger.info(f"{self.name} coordinating benefits for claim {state.claim_id}")
         
+        if state.mock_mode:
+            import asyncio
+            await asyncio.sleep(0.8)
+            
         if not state.coding_result or not state.coding_result.procedures:
             raise ValueError("No procedure codes have been extracted. COB coordination cannot proceed.")
             

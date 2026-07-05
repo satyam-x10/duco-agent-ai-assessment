@@ -27,6 +27,7 @@ async def start_analysis(payload: AnalysisStartRequest = None):
     job_id = str(uuid.uuid4())
     now = datetime.utcnow()
     ocr_engine = payload.ocr_engine if payload else "library"
+    mock_mode = payload.mock_mode if payload else False
 
     jobs_db[job_id] = {
         "job_id": job_id,
@@ -38,6 +39,7 @@ async def start_analysis(payload: AnalysisStartRequest = None):
         "error_details": None,
         "state": None,
         "ocr_engine": ocr_engine,
+        "mock_mode": mock_mode,
         "current_agent": None,
     }
 
@@ -122,6 +124,20 @@ async def _run_orchestration(job_id: str) -> None:
         """Callback invoked just before an agent begins executing — marks it as the active agent."""
         job["current_agent"] = agent_name
         job["message"] = f"{agent_name} is running..."
+        
+        # Start milestones to update progress bar dynamically when starting each agent
+        start_milestones = {
+            "IntakeAgent": 10,
+            "DocIntelAgent": 25,
+            "MedicalCodingAgent": 45,
+            "InsuranceAgent": 62,
+            "COBAgent": 78,
+            "FinanceAgent": 90,
+            "ReviewerAgent": 98,
+        }
+        if agent_name in start_milestones:
+            job["progress_percent"] = start_milestones[agent_name]
+            
         logger.info(f"[Job {job_id}] {agent_name} starting...")
 
     try:
@@ -135,8 +151,9 @@ async def _run_orchestration(job_id: str) -> None:
         member_id = "98765"
 
         ocr_engine = job.get("ocr_engine", "library")
+        mock_mode = job.get("mock_mode", False)
         claim_id = f"CLAIM-{job_id[:8].upper()}"
-        state = SharedWorkflowState(claim_id=claim_id, member_id=member_id, ocr_engine=ocr_engine)
+        state = SharedWorkflowState(claim_id=claim_id, member_id=member_id, ocr_engine=ocr_engine, mock_mode=mock_mode)
 
         orchestrator = get_orchestrator()
         orchestrator.set_progress_callback(on_agent_complete)

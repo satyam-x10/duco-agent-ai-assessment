@@ -57,6 +57,7 @@ class SharedWorkflowState(BaseModel):
     claim_id: str = Field(..., description="Claim ID associated with the run")
     member_id: str = Field(..., description="Member ID of the patient")
     ocr_engine: str = Field("gemini", description="OCR engine choice for image/scanned PDF processing: library | gemini")
+    mock_mode: bool = Field(False, description="Whether to run in mock mode bypassing Gemini API calls")
     processed_documents: Dict[DocumentType, ProcessedDocument] = Field(default_factory=dict, description="Extracted texts from document intelligence")
     ocr_strategies: Dict[DocumentType, str] = Field(default_factory=dict, description="Dynamic extraction strategies resolved for document types")
     coding_result: Optional[CodingResult] = Field(None, description="Extracted clinical diagnosis and procedure codes")

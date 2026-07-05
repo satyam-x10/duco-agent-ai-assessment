@@ -45,6 +45,7 @@ export const IntakePage: React.FC = () => {
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [failedAgent, setFailedAgent] = useState<string | null>(null);
     const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
+    const [mockMode, setMockMode] = useState(true);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [currentAgent, setCurrentAgent] = useState<string | null>(null);
     const [agentFeed, setAgentFeed] = useState<AgentFeedEntry[]>([]);
@@ -141,7 +142,7 @@ export const IntakePage: React.FC = () => {
         setReviewWarnings([]);
         setPhaseMessage('Contacting backend orchestrator...');
         try {
-            const { job_id } = await ApiService.startAnalysis(ocrEngine);
+            const { job_id } = await ApiService.startAnalysis(ocrEngine, mockMode);
             setActiveJobId(job_id);
             setAnalysisStatus('processing');
             intervalRef.current = buildPollingLoop(job_id, new Set<string>());
@@ -164,6 +165,46 @@ export const IntakePage: React.FC = () => {
         setAgentFeed([]);
         setCurrentAgent(null);
         setReviewWarnings([]);
+    };
+
+    const getAgentState = (agentName: string): 'pending' | 'running' | 'success' | 'retry' | 'error' => {
+        if (analysisStatus === 'failed' && currentAgent === agentName) {
+            return 'error';
+        }
+        
+        const feedEntry = agentFeed.find(entry => entry.agentName === agentName);
+        if (feedEntry) {
+            if (feedEntry.status === 'error') return 'error';
+            if (feedEntry.status === 'retry' && currentAgent !== agentName) return 'retry';
+            if (feedEntry.status === 'success' && currentAgent !== agentName) return 'success';
+        }
+
+        if (currentAgent === agentName) {
+            return 'running';
+        }
+
+        const milestones: Record<string, number> = {
+            IntakeAgent: 15,
+            DocIntelAgent: 35,
+            MedicalCodingAgent: 55,
+            InsuranceAgent: 70,
+            COBAgent: 85,
+            FinanceAgent: 95,
+            ReviewerAgent: 100,
+        };
+
+        if (agentName === 'ClinicianAuditor') {
+            if (analysisStatus === 'awaiting_approval') return 'running';
+            if (progress === 100 && analysisStatus === 'completed') return 'success';
+            return 'pending';
+        }
+
+        const milestone = milestones[agentName];
+        if (milestone && progress >= milestone) {
+            return 'success';
+        }
+
+        return 'pending';
     };
 
     const activeFiles = Object.values(uploadedFiles).filter(f => f?.status === 'ready') as UploadedFile[];
@@ -229,6 +270,86 @@ export const IntakePage: React.FC = () => {
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
                             <span>Progress</span><span>{progress}%</span>
+                        </div>
+                    </div>
+
+                    {/* Agent Stepper Pipeline */}
+                    <div style={{ marginBottom: 24 }}>
+                        <h3 style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+                            Active Specialist Agents Pipeline
+                        </h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                            {Object.entries(AGENT_META).map(([name, meta]) => {
+                                const state = getAgentState(name);
+                                
+                                let bg = '#f8fafc';
+                                let border = '1px solid #e2e8f0';
+                                let iconColor = '#94a3b8';
+                                let labelColor = '#64748b';
+                                let statusText = 'Pending';
+                                let glowStyle = {};
+                                let pulseDot = null;
+                                
+                                if (state === 'running') {
+                                    bg = '#eff6ff';
+                                    border = '1px solid #3b82f6';
+                                    iconColor = '#3b82f6';
+                                    labelColor = '#1e40af';
+                                    statusText = 'Active';
+                                    glowStyle = {
+                                        boxShadow: '0 0 14px rgba(59, 130, 246, 0.25)',
+                                        animation: 'pulse 1.8s infinite ease-in-out'
+                                    };
+                                    pulseDot = <span style={{ position: 'absolute', top: 6, right: 6, display: 'block', height: 8, width: 8, borderRadius: '50%', background: '#2563eb' }} />;
+                                } else if (state === 'success') {
+                                    bg = '#f0fdf4';
+                                    border = '1px solid #bcf0da';
+                                    iconColor = '#16a34a';
+                                    labelColor = '#14532d';
+                                    statusText = 'Completed';
+                                } else if (state === 'retry') {
+                                    bg = '#fffbeb';
+                                    border = '1px solid #fde68a';
+                                    iconColor = '#d97706';
+                                    labelColor = '#78350f';
+                                    statusText = 'Retrying';
+                                } else if (state === 'error') {
+                                    bg = '#fef2f2';
+                                    border = '1px solid #fca5a5';
+                                    iconColor = '#dc2626';
+                                    labelColor = '#7f1d1d';
+                                    statusText = 'Failed';
+                                }
+                                
+                                return (
+                                    <div
+                                        key={name}
+                                        style={{
+                                            borderRadius: 12,
+                                            background: bg,
+                                            border: border,
+                                            padding: '12px 8px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            textAlign: 'center',
+                                            position: 'relative',
+                                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                            ...glowStyle
+                                        }}
+                                    >
+                                        {pulseDot}
+                                        <div style={{ fontSize: 20, marginBottom: 4 }}>{meta.emoji}</div>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: labelColor, lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+                                            {meta.label}
+                                        </div>
+                                        <div style={{ fontSize: 8, fontWeight: 700, color: iconColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>
+                                            {statusText}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
@@ -379,7 +500,14 @@ export const IntakePage: React.FC = () => {
                         </>
                     )}
                 </div>
-                <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+                <style>{`
+                    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                    @keyframes pulse {
+                        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+                        70% { transform: scale(1.02); box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+                        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+                    }
+                `}</style>
             </PageContainer>
         );
     }
@@ -446,23 +574,36 @@ export const IntakePage: React.FC = () => {
                                 <p style={{ fontSize: 12, color: '#059669', margin: '0 0 16px' }}>The orchestrator is ready to begin Coordination of Benefits reasoning across 7 specialist AI agents.</p>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
                                     <div>
-                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Image OCR Engine</label>
+                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Run Mode (Select Demo for Mock Run)</label>
                                         <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 3, gap: 3, border: '1px solid #cbd5e1' }}>
+                                            <button type="button" onClick={() => setMockMode(true)}
+                                                style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: mockMode ? '1px solid #cbd5e1' : '1px solid transparent', background: mockMode ? '#fff' : 'transparent', color: mockMode ? '#1e293b' : '#64748b', boxShadow: mockMode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
+                                                Demo (Mock Run)
+                                            </button>
+                                            <button type="button" onClick={() => setMockMode(false)}
+                                                style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: !mockMode ? '1px solid #cbd5e1' : '1px solid transparent', background: !mockMode ? '#fff' : 'transparent', color: !mockMode ? '#1e293b' : '#64748b', boxShadow: !mockMode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
+                                                Production (Gemini)
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Image OCR Engine</label>
+                                        <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 3, gap: 3, border: '1px solid #cbd5e1', opacity: mockMode ? 0.5 : 1, pointerEvents: mockMode ? 'none' : 'auto' }}>
                                             {(['library', 'gemini'] as const).map(eng => (
-                                                <button key={eng} type="button" onClick={() => setOcrEngine(eng)}
-                                                    style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: ocrEngine === eng ? '1px solid #cbd5e1' : '1px solid transparent', background: ocrEngine === eng ? '#fff' : 'transparent', color: ocrEngine === eng ? '#1e293b' : '#64748b', boxShadow: ocrEngine === eng ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
+                                                <button key={eng} type="button" onClick={() => setOcrEngine(eng)} disabled={mockMode}
+                                                    style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: mockMode ? 'default' : 'pointer', border: ocrEngine === eng ? '1px solid #cbd5e1' : '1px solid transparent', background: ocrEngine === eng ? '#fff' : 'transparent', color: ocrEngine === eng ? '#1e293b' : '#64748b', boxShadow: ocrEngine === eng ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
                                                     {eng === 'library' ? 'Local OCR (Default)' : 'Gemini Vision OCR'}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
                                     <button onClick={startAssessment} type="button"
-                                        style={{ borderRadius: 10, background: '#2563eb', color: '#fff', border: 'none', padding: '10px 22px', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'background 0.15s' }}
+                                        style={{ borderRadius: 10, background: '#2563eb', color: '#fff', border: 'none', padding: '12px 22px', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'background 0.15s', alignSelf: 'flex-end' }}
                                         onMouseEnter={e => (e.currentTarget.style.background = '#1d4ed8')}
                                         onMouseLeave={e => (e.currentTarget.style.background = '#2563eb')}>
                                         🚀 Start Assessment
                                     </button>
-                                    <span style={{ fontSize: 11, color: '#94a3b8' }}>Orchestrates 7 specialist agents</span>
+                                    <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'flex-end', paddingBottom: 4 }}>Orchestrates 7 specialist agents</span>
                                 </div>
                             </div>
                         </div>

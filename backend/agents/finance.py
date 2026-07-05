@@ -15,6 +15,10 @@ class FinanceAgent(Agent):
     async def execute(self, state: SharedWorkflowState) -> None:
         logger.info(f"{self.name} generating financial breakdown for claim {state.claim_id}")
         
+        if state.mock_mode:
+            import asyncio
+            await asyncio.sleep(0.8)
+            
         if not state.cob_decision:
             raise ValueError("No Coordination of Benefits decision is present. Finance adjudication cannot proceed.")
             

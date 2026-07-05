@@ -13,6 +13,10 @@ class ReviewerAgent(Agent):
     async def execute(self, state: SharedWorkflowState) -> None:
         logger.info(f"{self.name} auditing workflow outputs for claim {state.claim_id}")
         
+        if state.mock_mode:
+            import asyncio
+            await asyncio.sleep(0.8)
+            
         # Clear previous warnings to prevent duplicates during backtracking or retries
         state.warnings = []
         

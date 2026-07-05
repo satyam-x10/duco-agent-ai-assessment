@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { RequirementSlotId, UploadedFile } from '../types/intake';
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -44,6 +44,8 @@ export interface AnalysisStatusResponse {
   created_at: string;
   completed_at?: string;
   error_details?: string;
+  current_agent?: string | null;
+  warnings?: string[];
 }
 
 // Convert backend metadata to frontend UI model

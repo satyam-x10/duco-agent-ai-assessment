@@ -132,17 +132,22 @@ class PreAuthorizationService:
             procedures_rows = []
             total_billed = 0.0
 
-            # CPT Billed lookup map (mirroring the COB Engine estimate values)
+            # CPT Billed lookup map (mirroring the COB Engine estimate values in INR)
             cpt_billed_map = {
-                "97161": 650.00,
-                "97110": 200.00,
-                "73721": 1200.00,
-                "29881": 8900.00,
-                "29888": 15000.00
+                "97161": 20000.00,
+                "97110": 10000.00,
+                "73721": 12000.00,
+                "29881": 100000.00,
+                "29888": 350000.00
             }
 
             for proc in procedures:
                 cost = cpt_billed_map.get(proc.code, 500.00)
+                if state.cob_decision:
+                    for line in state.cob_decision.lines_coverage:
+                        if line.cpt_code == proc.code:
+                            cost = line.billed_amount
+                            break
                 total_billed += cost
 
                 # Determine if pre-auth is required under this specific policy

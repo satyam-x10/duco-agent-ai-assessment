@@ -28,9 +28,11 @@ class DocIntelAgent(Agent):
             file_path = await self.storage_service.get_file_path(doc_type)
             logger.info(f"{self.name} processing {doc_type.value} at {file_path}")
             
-            # Execute parsing/OCR with dynamic strategy (e.g. high_fidelity on retry)
+            # Execute parsing/OCR with dynamic strategy (e.g. high_fidelity on retry) using formal OCRTool
             strategy = state.ocr_strategies.get(doc_type, "standard")
-            processed_doc = await self.doc_intel_service.process_document(file_path, doc_type, strategy=strategy, ocr_engine=state.ocr_engine)
+            from tools.ocr_tool import OCRTool
+            ocr_tool = OCRTool(self.doc_intel_service)
+            processed_doc = await ocr_tool.run(file_path, doc_type, strategy=strategy, ocr_engine=state.ocr_engine)
             state.processed_documents[doc_type] = processed_doc
             
         logger.info(f"{self.name} completed parsing. {len(state.processed_documents)} documents now in state.")

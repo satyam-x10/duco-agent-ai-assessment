@@ -22,6 +22,28 @@ class COBEngine:
     def __init__(self, insurance_service: InsuranceService):
         self.insurance_service = insurance_service
 
+    def check_medical_necessity(self, cpt_code: str, diagnosis_codes: List[str]) -> Tuple[bool, str]:
+        """
+        Checks if a CPT procedure is medically necessary based on diagnosis codes.
+        Returns (is_necessary, rationale).
+        """
+        cpt = cpt_code.strip()
+        diagnoses = [d.strip().upper() for d in diagnosis_codes]
+        
+        # CPT 29888: Arthroscopically aided ACL Reconstruction
+        if cpt == "29888":
+            has_acl_tear = any(d.startswith("S83.51") for d in diagnoses)
+            if not has_acl_tear:
+                return False, "CPT 29888 (ACL Reconstruction) is not covered/approved by the insurer because the diagnostic MRI report shows no ACL injury, meaning the procedure is not medically necessary."
+                
+        # CPT 29881: Arthroscopy, Knee Partial Meniscectomy
+        elif cpt == "29881":
+            has_meniscus_tear = any(d.startswith("M23.2") or d.startswith("S83.2") for d in diagnoses)
+            if not has_meniscus_tear:
+                return False, "CPT 29881 (Partial Meniscectomy) is not covered/approved by the insurer because the diagnostic MRI report shows no meniscus tear, meaning the procedure is not medically necessary."
+                
+        return True, ""
+
     def determine_payment_order(
         self, patient_member: Member, policies: List[InsurancePolicy]
     ) -> Tuple[Optional[InsurancePolicy], Optional[InsurancePolicy]]:
@@ -189,6 +211,9 @@ class COBEngine:
                     rem_indiv_ded[(secondary_policy.policy_id, secondary_member_id)] = secondary_policy.deductible.remaining_individual
                     rem_indiv_oop[(secondary_policy.policy_id, secondary_member_id)] = secondary_policy.remaining_out_of_pocket_max
 
+            # Check medical necessity
+            is_necessary, necessity_rationale = self.check_medical_necessity(line.cpt_code, claim.diagnoses or [])
+
             # A. Primary Adjudication
             is_pri_covered = False
             pri_ded_applied = 0.0
@@ -197,7 +222,7 @@ class COBEngine:
             pri_paid = 0.0
             pri_patient_resp = billed
 
-            if primary_policy:
+            if primary_policy and is_necessary:
                 is_pri_covered = self.insurance_service.is_procedure_covered(primary_member_id, line.cpt_code)
                 if is_pri_covered:
                     # Apply primary individual deductible and family deductible rollup
@@ -252,7 +277,9 @@ class COBEngine:
 
             notes_msg = ""
 
-            if secondary_policy and is_pri_covered:
+            if not is_necessary:
+                notes_msg = necessity_rationale
+            elif secondary_policy and is_pri_covered:
                 is_sec_covered = self.insurance_service.is_procedure_covered(secondary_member_id, line.cpt_code)
                 if is_sec_covered:
                     # Calculate secondary normal benefit

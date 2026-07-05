@@ -13,6 +13,7 @@ class Claim(BaseModel):
     claim_id: str = Field(..., description="Unique claim identifier")
     member_id: str = Field(..., description="The member ID of the patient (may match primary subscriber or dependent)")
     lines: List[ClaimLine] = Field(..., description="List of line items on the claim")
+    diagnoses: List[str] = Field(default_factory=list, description="Extracted ICD-10 diagnosis codes supporting the claim")
 
 
 class PrimaryCoverage(BaseModel):

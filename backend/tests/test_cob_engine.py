@@ -204,3 +204,62 @@ def test_coordinate_benefits_custom_not_covered():
     assert decision.total_primary_paid == 0.0
     assert decision.total_secondary_paid == 13500.0
     assert decision.total_patient_responsibility == 6500.0
+
+
+def test_medical_necessity_checking(cob_engine):
+    """Verify that CPT 29888 and 29881 are denied when diagnoses do not support them, and approved when they do."""
+    service = InsuranceService()
+    engine = COBEngine(service)
+
+    # Scenario 1: Normal knee MRI report (Z04.89), no ACL or meniscus tear diagnoses
+    claim_denied = Claim(
+        claim_id="CLAIM-DENIED",
+        member_id="98765-02",  # Aarav Sen
+        lines=[
+            ClaimLine(cpt_code="29888", billed_amount=350000.0),
+            ClaimLine(cpt_code="29881", billed_amount=100000.0),
+            ClaimLine(cpt_code="73721", billed_amount=12000.0),
+        ],
+        diagnoses=["Z04.89"]
+    )
+
+    decision_denied = engine.coordinate_benefits(claim_denied)
+
+    # 29888 and 29881 should be denied
+    line_29888 = next(l for l in decision_denied.lines_coverage if l.cpt_code == "29888")
+    assert line_29888.primary_coverage.is_covered is False
+    assert line_29888.secondary_coverage.is_covered is False
+    assert line_29888.remaining_balance.primary_paid == 0.0
+    assert line_29888.remaining_balance.secondary_paid == 0.0
+    assert line_29888.remaining_balance.patient_responsibility == 350000.0
+    assert "not medically necessary" in line_29888.remaining_balance.notes.lower()
+
+    line_29881 = next(l for l in decision_denied.lines_coverage if l.cpt_code == "29881")
+    assert line_29881.primary_coverage.is_covered is False
+    assert line_29881.secondary_coverage.is_covered is False
+    assert "not medically necessary" in line_29881.remaining_balance.notes.lower()
+
+    # 73721 (MRI) should be covered
+    line_73721 = next(l for l in decision_denied.lines_coverage if l.cpt_code == "73721")
+    assert line_73721.primary_coverage.is_covered is True
+
+    # Scenario 2: Diagnoses support the surgery (S83.511A for ACL tear, M23.231 for meniscus tear)
+    claim_approved = Claim(
+        claim_id="CLAIM-APPROVED",
+        member_id="98765-02",  # Aarav Sen
+        lines=[
+            ClaimLine(cpt_code="29888", billed_amount=350000.0),
+            ClaimLine(cpt_code="29881", billed_amount=100000.0),
+        ],
+        diagnoses=["S83.511A", "M23.231"]
+    )
+
+    decision_approved = engine.coordinate_benefits(claim_approved)
+    
+    line_29888_app = next(l for l in decision_approved.lines_coverage if l.cpt_code == "29888")
+    assert line_29888_app.primary_coverage.is_covered is True
+    assert line_29888_app.remaining_balance.primary_paid > 0.0
+
+    line_29881_app = next(l for l in decision_approved.lines_coverage if l.cpt_code == "29881")
+    assert line_29881_app.primary_coverage.is_covered is True
+    assert line_29881_app.remaining_balance.primary_paid > 0.0

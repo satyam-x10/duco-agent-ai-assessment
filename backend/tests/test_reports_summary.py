@@ -140,3 +140,42 @@ def test_reports_summary_fallback(client):
         assert "patient_name" in letter
         assert "letter_content" in letter
         assert "generated_at" in letter
+
+
+def test_analysis_history(client):
+    # Clear history first
+    response = client.post("/api/v1/analysis/clear-history")
+    assert response.status_code == 200
+    
+    # Verify history is empty
+    response = client.get("/api/v1/analysis/history")
+    assert response.status_code == 200
+    assert response.json() == []
+
+    # Insert a mock job directly into jobs_db
+    now = datetime.utcnow()
+    jobs_db["test-history-job-1"] = {
+        "job_id": "test-history-job-1",
+        "status": JobStatus.COMPLETED,
+        "progress_percent": 100,
+        "message": "Completed successfully",
+        "created_at": now,
+        "completed_at": now,
+        "error_details": None,
+        "state": None
+    }
+
+    # Verify job is returned in history
+    response = client.get("/api/v1/analysis/history")
+    assert response.status_code == 200
+    history = response.json()
+    assert len(history) == 1
+    assert history[0]["job_id"] == "test-history-job-1"
+    assert history[0]["status"] == "completed"
+
+    # Clear history again and verify empty
+    response = client.post("/api/v1/analysis/clear-history")
+    assert response.status_code == 200
+    response = client.get("/api/v1/analysis/history")
+    assert response.status_code == 200
+    assert response.json() == []

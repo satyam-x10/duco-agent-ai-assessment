@@ -130,6 +130,7 @@ class LocalStorageService(StorageService):
         # 5. Populate and registry metadata
         metadata = DocumentMetadata(
             filename=stored_filename,
+            original_filename=file.filename or "unnamed_file",
             size_bytes=size_bytes,
             content_type=file.content_type or "application/octet-stream",
             upload_time=datetime.utcnow(),
@@ -184,6 +185,7 @@ class CloudStorageService(StorageService):
         logger.info(f"[GCS Mock] Uploading '{file.filename}' to gs://duco-agent-bucket/uploads/")
         metadata = DocumentMetadata(
             filename=f"gcs_{document_type.value}_{uuid.uuid4().hex}.pdf",
+            original_filename=file.filename or "unnamed_file",
             size_bytes=452000,
             content_type=file.content_type or "application/pdf",
             upload_time=datetime.utcnow(),

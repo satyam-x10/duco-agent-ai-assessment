@@ -13,6 +13,7 @@ export interface RequirementSlot {
 
 export interface UploadedFile {
   name: string;
+  storedName?: string;
   size: number;
   type: string;
   status: 'ready' | 'uploading' | 'error';

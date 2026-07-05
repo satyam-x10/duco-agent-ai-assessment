@@ -69,6 +69,16 @@ export const Header: React.FC = () => {
           >
             COB Results
           </NavLink>
+          <NavLink
+            to="/history"
+            className={({ isActive }) =>
+              `text-sm font-semibold transition-colors ${
+                isActive ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'
+              }`
+            }
+          >
+            History
+          </NavLink>
         </nav>
 
         {/* System Status Indicators */}

@@ -15,6 +15,7 @@ class DocumentType(str, Enum):
 class DocumentMetadata(BaseModel):
     """Metadata details representing a document stored in the workspace."""
     filename: str = Field(..., description="The name of the uploaded file")
+    original_filename: Optional[str] = Field(None, description="The original name of the file uploaded by the user")
     size_bytes: int = Field(..., description="Size of the file in bytes")
     content_type: str = Field(..., description="MIME content type of the file")
     upload_time: datetime = Field(..., description="Timestamp when the file was uploaded")

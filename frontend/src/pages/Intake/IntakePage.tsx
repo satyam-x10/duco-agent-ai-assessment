@@ -53,9 +53,39 @@ export const IntakePage: React.FC = () => {
     const feedBottomRef = useRef<HTMLDivElement>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // Fetch existing uploads on mount — sync only what's already on the backend (no auto-populate)
+    // Fetch existing uploads or resume a job if job_id is passed in the URL query params
     useEffect(() => {
-        ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
+        const queryParams = new URLSearchParams(window.location.search);
+        const jobIdParam = queryParams.get('job_id');
+        
+        if (jobIdParam) {
+            ApiService.getAnalysisStatus(jobIdParam).then(job => {
+                setActiveJobId(job.job_id);
+                setProgress(job.progress_percent);
+                setPhaseMessage(job.message);
+                setReviewWarnings(job.warnings || []);
+                setErrorMessage(job.error_details || null);
+                
+                let nextStatus: 'idle' | 'starting' | 'processing' | 'awaiting_approval' | 'completed' | 'failed' = 'idle';
+                if (job.status === 'pending') nextStatus = 'starting';
+                else if (job.status === 'processing') nextStatus = 'processing';
+                else if (job.status === 'awaiting_approval') nextStatus = 'awaiting_approval';
+                else if (job.status === 'completed') nextStatus = 'completed';
+                else if (job.status === 'failed') nextStatus = 'failed';
+                
+                setAnalysisStatus(nextStatus);
+                
+                if (job.status === 'processing' || job.status === 'pending') {
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                    intervalRef.current = buildPollingLoop(job.job_id, new Set<string>());
+                }
+            }).catch(() => {
+                // Fallback to standard status load if job_id fetch fails
+                ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
+            });
+        } else {
+            ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
+        }
     }, []);
 
     // Auto-scroll agent feed

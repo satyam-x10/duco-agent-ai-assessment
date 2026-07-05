@@ -190,6 +190,12 @@ export const RequirementSlotCard: React.FC<RequirementSlotCardProps> = ({
             <h3 className="mt-1 text-sm font-semibold text-slate-900 truncate" title={file.name}>
               {file.name}
             </h3>
+
+            {file.storedName && file.storedName !== file.name && (
+              <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5" title={`Internal filename: ${file.storedName}`}>
+                Stored: <span className="font-mono text-[9px] text-slate-500 bg-slate-100 px-1 py-0.5 rounded">{file.storedName}</span>
+              </p>
+            )}
             
             {file.status === 'error' && (
               <p className="mt-1 text-xs font-semibold text-red-650 leading-normal bg-red-50/55 border border-red-100 rounded-lg p-2">
@@ -197,7 +203,7 @@ export const RequirementSlotCard: React.FC<RequirementSlotCardProps> = ({
               </p>
             )}
 
-            <div className="mt-2.5 flex items-center gap-3 text-xs text-slate-400">
+            <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
               <span>{formatFileSize(file.size)}</span>
               <span>&bull;</span>
               

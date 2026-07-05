@@ -7,7 +7,8 @@ from app.schemas.reports import (
     FinancialSummary,
     LetterMetadata,
     AudioMetadata,
-    TraceEntrySchema
+    TraceEntrySchema,
+    ClaimLineCoverageSchema
 )
 from app.core.adk import SharedWorkflowState
 from app.api.v1.endpoints.analysis import jobs_db
@@ -142,6 +143,48 @@ async def get_report_summary(job_id: str):
             )
         )
 
+    # 7. Map per-procedure COB line-level coverage decisions for frontend transparency
+    cpt_description_fallback = {
+        "97161": "Physical Therapy Evaluation",
+        "97110": "Therapeutic Exercises",
+        "73721": "MRI Joint Lower Extremity",
+        "29881": "Arthroscopy knee meniscus repair",
+        "29888": "Arthroscopically aided ACL reconstruction",
+        "97140": "Manual Therapy Techniques",
+        "97112": "Neuromuscular Reeducation",
+        "29882": "Arthroscopy knee meniscus suture"
+    }
+
+    cob_lines = []
+    if state.cob_decision and state.cob_decision.lines_coverage:
+        for line in state.cob_decision.lines_coverage:
+            # Find description of this CPT code from coding_result or fallback dictionary
+            description = ""
+            if state.coding_result and state.coding_result.procedures:
+                for proc in state.coding_result.procedures:
+                    if proc.code == line.cpt_code:
+                        description = proc.description
+                        break
+            if not description:
+                description = cpt_description_fallback.get(line.cpt_code, "Unrecognized Medical Procedure")
+
+            cob_lines.append(
+                ClaimLineCoverageSchema(
+                    cpt_code=line.cpt_code,
+                    description=description,
+                    billed_amount=line.billed_amount,
+                    is_primary_covered=line.primary_coverage.is_covered,
+                    primary_deductible=line.primary_coverage.deductible_applied,
+                    primary_coinsurance=line.primary_coverage.coinsurance_amount,
+                    primary_paid=line.primary_coverage.primary_paid,
+                    is_secondary_covered=line.secondary_coverage.is_covered,
+                    secondary_deductible=line.secondary_coverage.deductible_applied,
+                    secondary_paid=line.secondary_coverage.secondary_paid,
+                    patient_responsibility=line.remaining_balance.patient_responsibility,
+                    notes=line.remaining_balance.notes or "",
+                )
+            )
+
     return ReportSummaryResponse(
         job_id=job_id,
         patient_name=patient_name,
@@ -167,6 +210,7 @@ async def get_report_summary(job_id: str):
         audio_briefing=briefing_res.briefing,
         requires_human_approval=getattr(state, "requires_human_approval", False),
         human_approved=getattr(state, "human_approved", False),
+        cob_lines=cob_lines,
     )
 
 

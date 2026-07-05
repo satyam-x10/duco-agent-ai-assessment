@@ -42,33 +42,6 @@ def get_app() -> FastAPI:
     # Include versioned API routing
     app.include_router(api_router, prefix=settings.API_V1_STR)
     
-    # Pre-populate sample documents if uploads folder is empty
-    try:
-        pre_populate_uploads()
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Failed to pre-populate sample files: {e}")
-        
     return app
 
 
-def pre_populate_uploads():
-    """Automatically copies sample documents from /docs to /backend/uploads if empty."""
-    import shutil
-    from pathlib import Path
-    
-    base_dir = Path(__file__).resolve().parent.parent.parent.parent
-    docs_dir = base_dir / "docs"
-    uploads_dir = base_dir / "backend" / "uploads"
-    
-    if not uploads_dir.exists():
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-        
-    # Find any files other than .gitkeep
-    existing = [f for f in uploads_dir.iterdir() if f.is_file() and f.name != ".gitkeep"]
-    if not existing and docs_dir.exists():
-        print(f"Pre-populating {uploads_dir} with sample documents...")
-        for src_file in docs_dir.iterdir():
-            if src_file.is_file() and src_file.name not in (".gitkeep", "test.py"):
-                shutil.copy(src_file, uploads_dir / src_file.name)
-                print(f"Auto-populated sample: {src_file.name}")

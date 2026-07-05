@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -36,3 +36,5 @@ class AnalysisStatusResponse(BaseModel):
     created_at: datetime = Field(..., description="Timestamp when the analysis job was created")
     completed_at: Optional[datetime] = Field(None, description="Timestamp when the job finished")
     error_details: Optional[str] = Field(None, description="Error messages if the job failed")
+    current_agent: Optional[str] = Field(None, description="Name of the agent currently actively executing")
+    warnings: List[str] = Field(default_factory=list, description="ReviewerAgent warnings — populated when awaiting approval so UI can show them")

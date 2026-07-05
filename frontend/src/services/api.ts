@@ -44,6 +44,8 @@ export interface AnalysisStatusResponse {
   created_at: string;
   completed_at?: string;
   error_details?: string;
+  current_agent?: string | null;
+  warnings?: string[];
 }
 
 // Convert backend metadata to frontend UI model

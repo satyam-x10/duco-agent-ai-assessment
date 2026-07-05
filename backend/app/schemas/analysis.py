@@ -17,6 +17,7 @@ class AnalysisStartRequest(BaseModel):
     """Input parameters to start a Coordination of Benefits analysis run."""
     config: Optional[dict] = Field(None, description="Optional agent execution parameters or overrides")
     ocr_engine: Optional[str] = Field("library", description="OCR engine selection for image/scanned PDF processing: 'library' or 'gemini'")
+    mock_mode: Optional[bool] = Field(False, description="Enable mock mode using cached/mock results instead of hitting LLM API")
 
 
 class AnalysisStartResponse(BaseModel):

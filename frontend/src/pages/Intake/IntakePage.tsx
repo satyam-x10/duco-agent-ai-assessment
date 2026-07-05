@@ -8,14 +8,14 @@ import { ApiService } from '../../services/api';
 
 // ─── Agent metadata ──────────────────────────────────────────────────────────
 const AGENT_META: Record<string, { emoji: string; label: string; description: string }> = {
-    IntakeAgent:        { emoji: '📋', label: 'Intake Agent',         description: 'Verifying uploaded documents in storage slots' },
-    DocIntelAgent:      { emoji: '🔍', label: 'Doc Intel Agent',      description: 'Extracting text via OCR from all uploaded files' },
+    IntakeAgent: { emoji: '📋', label: 'Intake Agent', description: 'Verifying uploaded documents in storage slots' },
+    DocIntelAgent: { emoji: '🔍', label: 'Doc Intel Agent', description: 'Extracting text via OCR from all uploaded files' },
     MedicalCodingAgent: { emoji: '🧬', label: 'Medical Coding Agent', description: 'Inferring ICD-10 and CPT codes with Gemini AI' },
-    InsuranceAgent:     { emoji: '🏥', label: 'Insurance Agent',      description: 'Resolving insurance policies for this patient' },
-    COBAgent:           { emoji: '⚖️', label: 'COB Agent',            description: 'Coordinating benefits across primary & secondary plans' },
-    FinanceAgent:       { emoji: '💰', label: 'Finance Agent',        description: 'Computing audited financial breakdown & deductibles' },
-    ReviewerAgent:      { emoji: '🔎', label: 'Reviewer Agent',       description: 'Quality auditing pipeline outputs and confidence scores' },
-    ClinicianAuditor:   { emoji: '👨‍⚕️', label: 'Clinician Auditor',    description: 'Manual clinical sign-off' },
+    InsuranceAgent: { emoji: '🏥', label: 'Insurance Agent', description: 'Resolving insurance policies for this patient' },
+    COBAgent: { emoji: '⚖️', label: 'COB Agent', description: 'Coordinating benefits across primary & secondary plans' },
+    FinanceAgent: { emoji: '💰', label: 'Finance Agent', description: 'Computing audited financial breakdown & deductibles' },
+    ReviewerAgent: { emoji: '🔎', label: 'Reviewer Agent', description: 'Quality auditing pipeline outputs and confidence scores' },
+    ClinicianAuditor: { emoji: '👨‍⚕️', label: 'Clinician Auditor', description: 'Manual clinical sign-off' },
 };
 
 interface AgentFeedEntry {
@@ -29,10 +29,10 @@ export const IntakePage: React.FC = () => {
     const navigate = useNavigate();
 
     const requirementSlots: RequirementSlot[] = [
-        { id: 'priya_pt_invoice',       title: 'Priya PT Invoice',       description: 'Physical therapy invoice with billing codes, sessions, and amounts.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
-        { id: 'aarav_mri_report',        title: 'Aarav MRI Report',        description: 'Radiology MRI report highlighting medical findings.',                  allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
-        { id: 'surgeon_estimate',        title: 'Surgeon Estimate',        description: 'Fee estimate with procedure codes, facility costs, and pricing.',       allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
-        { id: 'user_query_transcript',   title: 'User Query Transcript',   description: 'Text transcript containing the benefit coordination query.',            allowedFormats: ['.txt', '.pdf'] },
+        { id: 'priya_pt_invoice', title: 'Priya PT Invoice', description: 'Physical therapy invoice with billing codes, sessions, and amounts.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'aarav_mri_report', title: 'Aarav MRI Report', description: 'Radiology MRI report highlighting medical findings.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'surgeon_estimate', title: 'Surgeon Estimate', description: 'Fee estimate with procedure codes, facility costs, and pricing.', allowedFormats: ['.pdf', '.png', '.jpg', '.jpeg'] },
+        { id: 'user_query_transcript', title: 'User Query Transcript', description: 'Text transcript containing the benefit coordination query.', allowedFormats: ['.txt', '.pdf'] },
     ];
 
     const [uploadedFiles, setUploadedFiles] = useState<Record<RequirementSlotId, UploadedFile | undefined>>({
@@ -40,21 +40,22 @@ export const IntakePage: React.FC = () => {
         surgeon_estimate: undefined, user_query_transcript: undefined,
     });
     const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'starting' | 'processing' | 'awaiting_approval' | 'completed' | 'failed'>('idle');
-    const [progress, setProgress]             = useState(0);
-    const [phaseMessage, setPhaseMessage]     = useState('');
-    const [errorMessage, setErrorMessage]     = useState<string | null>(null);
-    const [failedAgent, setFailedAgent]       = useState<string | null>(null);
-    const [ocrEngine, setOcrEngine]           = useState<'library' | 'gemini'>('library');
-    const [activeJobId, setActiveJobId]       = useState<string | null>(null);
-    const [currentAgent, setCurrentAgent]     = useState<string | null>(null);
-    const [agentFeed, setAgentFeed]           = useState<AgentFeedEntry[]>([]);
+    const [progress, setProgress] = useState(0);
+    const [phaseMessage, setPhaseMessage] = useState('');
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [failedAgent, setFailedAgent] = useState<string | null>(null);
+    const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
+    const [mockMode, setMockMode] = useState(true);
+    const [activeJobId, setActiveJobId] = useState<string | null>(null);
+    const [currentAgent, setCurrentAgent] = useState<string | null>(null);
+    const [agentFeed, setAgentFeed] = useState<AgentFeedEntry[]>([]);
     const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
     const feedBottomRef = useRef<HTMLDivElement>(null);
-    const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Fetch existing uploads on mount — sync only what's already on the backend (no auto-populate)
     useEffect(() => {
-        ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => {});
+        ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
     }, []);
 
     // Auto-scroll agent feed
@@ -141,7 +142,7 @@ export const IntakePage: React.FC = () => {
         setReviewWarnings([]);
         setPhaseMessage('Contacting backend orchestrator...');
         try {
-            const { job_id } = await ApiService.startAnalysis(ocrEngine);
+            const { job_id } = await ApiService.startAnalysis(ocrEngine, mockMode);
             setActiveJobId(job_id);
             setAnalysisStatus('processing');
             intervalRef.current = buildPollingLoop(job_id, new Set<string>());
@@ -166,7 +167,47 @@ export const IntakePage: React.FC = () => {
         setReviewWarnings([]);
     };
 
-    const activeFiles   = Object.values(uploadedFiles).filter(f => f?.status === 'ready') as UploadedFile[];
+    const getAgentState = (agentName: string): 'pending' | 'running' | 'success' | 'retry' | 'error' => {
+        if (analysisStatus === 'failed' && currentAgent === agentName) {
+            return 'error';
+        }
+
+        const feedEntry = agentFeed.find(entry => entry.agentName === agentName);
+        if (feedEntry) {
+            if (feedEntry.status === 'error') return 'error';
+            if (feedEntry.status === 'retry' && currentAgent !== agentName) return 'retry';
+            if (feedEntry.status === 'success' && currentAgent !== agentName) return 'success';
+        }
+
+        if (currentAgent === agentName) {
+            return 'running';
+        }
+
+        const milestones: Record<string, number> = {
+            IntakeAgent: 15,
+            DocIntelAgent: 35,
+            MedicalCodingAgent: 55,
+            InsuranceAgent: 70,
+            COBAgent: 85,
+            FinanceAgent: 95,
+            ReviewerAgent: 100,
+        };
+
+        if (agentName === 'ClinicianAuditor') {
+            if (analysisStatus === 'awaiting_approval') return 'running';
+            if (progress === 100 && analysisStatus === 'completed') return 'success';
+            return 'pending';
+        }
+
+        const milestone = milestones[agentName];
+        if (milestone && progress >= milestone) {
+            return 'success';
+        }
+
+        return 'pending';
+    };
+
+    const activeFiles = Object.values(uploadedFiles).filter(f => f?.status === 'ready') as UploadedFile[];
     const isAllUploaded = requirementSlots.every(s => uploadedFiles[s.id]?.status === 'ready');
     const isNoneUploaded = activeFiles.length === 0;
 
@@ -232,6 +273,86 @@ export const IntakePage: React.FC = () => {
                         </div>
                     </div>
 
+                    {/* Agent Stepper Pipeline */}
+                    <div style={{ marginBottom: 24 }}>
+                        <h3 style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+                            Active Specialist Agents Pipeline
+                        </h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                            {Object.entries(AGENT_META).map(([name, meta]) => {
+                                const state = getAgentState(name);
+
+                                let bg = '#f8fafc';
+                                let border = '1px solid #e2e8f0';
+                                let iconColor = '#94a3b8';
+                                let labelColor = '#64748b';
+                                let statusText = 'Pending';
+                                let glowStyle = {};
+                                let pulseDot = null;
+
+                                if (state === 'running') {
+                                    bg = '#eff6ff';
+                                    border = '1px solid #3b82f6';
+                                    iconColor = '#3b82f6';
+                                    labelColor = '#1e40af';
+                                    statusText = 'Active';
+                                    glowStyle = {
+                                        boxShadow: '0 0 14px rgba(59, 130, 246, 0.25)',
+                                        animation: 'pulse 1.8s infinite ease-in-out'
+                                    };
+                                    pulseDot = <span style={{ position: 'absolute', top: 6, right: 6, display: 'block', height: 8, width: 8, borderRadius: '50%', background: '#2563eb' }} />;
+                                } else if (state === 'success') {
+                                    bg = '#f0fdf4';
+                                    border = '1px solid #bcf0da';
+                                    iconColor = '#16a34a';
+                                    labelColor = '#14532d';
+                                    statusText = 'Completed';
+                                } else if (state === 'retry') {
+                                    bg = '#fffbeb';
+                                    border = '1px solid #fde68a';
+                                    iconColor = '#d97706';
+                                    labelColor = '#78350f';
+                                    statusText = 'Retrying';
+                                } else if (state === 'error') {
+                                    bg = '#fef2f2';
+                                    border = '1px solid #fca5a5';
+                                    iconColor = '#dc2626';
+                                    labelColor = '#7f1d1d';
+                                    statusText = 'Failed';
+                                }
+
+                                return (
+                                    <div
+                                        key={name}
+                                        style={{
+                                            borderRadius: 12,
+                                            background: bg,
+                                            border: border,
+                                            padding: '12px 8px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            textAlign: 'center',
+                                            position: 'relative',
+                                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                            ...glowStyle
+                                        }}
+                                    >
+                                        {pulseDot}
+                                        <div style={{ fontSize: 20, marginBottom: 4 }}>{meta.emoji}</div>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: labelColor, lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+                                            {meta.label}
+                                        </div>
+                                        <div style={{ fontSize: 8, fontWeight: 700, color: iconColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>
+                                            {statusText}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
                     {/* Live Agent Feed */}
                     <div style={{ borderRadius: 12, border: '1px solid #e2e8f0', background: '#f8fafc', overflow: 'hidden', marginBottom: 16 }}>
                         <div style={{ padding: '8px 14px', borderBottom: '1px solid #e2e8f0', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -242,9 +363,9 @@ export const IntakePage: React.FC = () => {
                                 <div style={{ padding: '12px 16px', fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>Waiting for first agent to start...</div>
                             )}
                             {agentFeed.map((entry, i) => {
-                                const meta  = AGENT_META[entry.agentName] || { emoji: '🤖', label: entry.agentName, description: '' };
-                                const clr   = entry.status === 'success' ? '#16a34a' : entry.status === 'retry' ? '#d97706' : '#dc2626';
-                                const bg    = entry.status === 'success' ? '#f0fdf4' : entry.status === 'retry' ? '#fffbeb' : '#fef2f2';
+                                const meta = AGENT_META[entry.agentName] || { emoji: '🤖', label: entry.agentName, description: '' };
+                                const clr = entry.status === 'success' ? '#16a34a' : entry.status === 'retry' ? '#d97706' : '#dc2626';
+                                const bg = entry.status === 'success' ? '#f0fdf4' : entry.status === 'retry' ? '#fffbeb' : '#fef2f2';
                                 const badge = entry.status === 'success' ? '✅ Done' : entry.status === 'retry' ? '🔄 Retried' : '❌ Error';
                                 return (
                                     <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 14px', borderBottom: '1px solid #f1f5f9' }}>
@@ -303,10 +424,10 @@ export const IntakePage: React.FC = () => {
                                             const isLow = w.toLowerCase().includes('low confidence');
                                             const isPol = w.includes('[Policy Inconsistency]');
                                             const isCod = w.includes('[Coding Inconsistency]');
-                                            const clr    = isLow ? '#dc2626' : isPol ? '#7c3aed' : isCod ? '#d97706' : '#475569';
-                                            const bg     = isLow ? '#fef2f2' : isPol ? '#f5f3ff' : isCod ? '#fffbeb' : '#f8fafc';
+                                            const clr = isLow ? '#dc2626' : isPol ? '#7c3aed' : isCod ? '#d97706' : '#475569';
+                                            const bg = isLow ? '#fef2f2' : isPol ? '#f5f3ff' : isCod ? '#fffbeb' : '#f8fafc';
                                             const border = isLow ? '#fecaca' : isPol ? '#ddd6fe' : isCod ? '#fde68a' : '#e2e8f0';
-                                            const tag    = isLow ? '🔴 Low Confidence' : isPol ? '🟣 Policy Inconsistency' : isCod ? '🟠 Coding Inconsistency' : '⚪ Note';
+                                            const tag = isLow ? '🔴 Low Confidence' : isPol ? '🟣 Policy Inconsistency' : isCod ? '🟠 Coding Inconsistency' : '⚪ Note';
                                             return (
                                                 <div key={i} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '9px 13px' }}>
                                                     <span style={{ fontSize: 10, fontWeight: 700, color: clr, display: 'block', marginBottom: 4 }}>{tag}</span>
@@ -379,7 +500,14 @@ export const IntakePage: React.FC = () => {
                         </>
                     )}
                 </div>
-                <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+                <style>{`
+                    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                    @keyframes pulse {
+                        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+                        70% { transform: scale(1.02); box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+                        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+                    }
+                `}</style>
             </PageContainer>
         );
     }
@@ -446,23 +574,36 @@ export const IntakePage: React.FC = () => {
                                 <p style={{ fontSize: 12, color: '#059669', margin: '0 0 16px' }}>The orchestrator is ready to begin Coordination of Benefits reasoning across 7 specialist AI agents.</p>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
                                     <div>
-                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Image OCR Engine</label>
+                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Run Mode (Select Demo for Mock Run)</label>
                                         <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 3, gap: 3, border: '1px solid #cbd5e1' }}>
+                                            <button type="button" onClick={() => setMockMode(true)}
+                                                style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: mockMode ? '1px solid #cbd5e1' : '1px solid transparent', background: mockMode ? '#fff' : 'transparent', color: mockMode ? '#1e293b' : '#64748b', boxShadow: mockMode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
+                                                Demo (Mock Run)
+                                            </button>
+                                            <button type="button" onClick={() => setMockMode(false)}
+                                                style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: !mockMode ? '1px solid #cbd5e1' : '1px solid transparent', background: !mockMode ? '#fff' : 'transparent', color: !mockMode ? '#1e293b' : '#64748b', boxShadow: !mockMode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
+                                                Production (Gemini)
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Image OCR Engine</label>
+                                        <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 3, gap: 3, border: '1px solid #cbd5e1', opacity: mockMode ? 0.5 : 1, pointerEvents: mockMode ? 'none' : 'auto' }}>
                                             {(['library', 'gemini'] as const).map(eng => (
-                                                <button key={eng} type="button" onClick={() => setOcrEngine(eng)}
-                                                    style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: ocrEngine === eng ? '1px solid #cbd5e1' : '1px solid transparent', background: ocrEngine === eng ? '#fff' : 'transparent', color: ocrEngine === eng ? '#1e293b' : '#64748b', boxShadow: ocrEngine === eng ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
+                                                <button key={eng} type="button" onClick={() => setOcrEngine(eng)} disabled={mockMode}
+                                                    style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: mockMode ? 'default' : 'pointer', border: ocrEngine === eng ? '1px solid #cbd5e1' : '1px solid transparent', background: ocrEngine === eng ? '#fff' : 'transparent', color: ocrEngine === eng ? '#1e293b' : '#64748b', boxShadow: ocrEngine === eng ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
                                                     {eng === 'library' ? 'Local OCR (Default)' : 'Gemini Vision OCR'}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
                                     <button onClick={startAssessment} type="button"
-                                        style={{ borderRadius: 10, background: '#2563eb', color: '#fff', border: 'none', padding: '10px 22px', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'background 0.15s' }}
+                                        style={{ borderRadius: 10, background: '#2563eb', color: '#fff', border: 'none', padding: '12px 22px', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'background 0.15s', alignSelf: 'flex-end' }}
                                         onMouseEnter={e => (e.currentTarget.style.background = '#1d4ed8')}
                                         onMouseLeave={e => (e.currentTarget.style.background = '#2563eb')}>
                                         🚀 Start Assessment
                                     </button>
-                                    <span style={{ fontSize: 11, color: '#94a3b8' }}>Orchestrates 7 specialist agents</span>
+                                    <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'flex-end', paddingBottom: 4 }}>Orchestrates 7 specialist agents</span>
                                 </div>
                             </div>
                         </div>

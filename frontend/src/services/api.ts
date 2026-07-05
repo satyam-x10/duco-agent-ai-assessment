@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { RequirementSlotId, UploadedFile } from '../types/intake';
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -115,9 +115,10 @@ export const ApiService = {
   /**
    * Triggers the coordination assessment.
    */
-  async startAnalysis(ocrEngine?: string): Promise<AnalysisStartResponse> {
+  async startAnalysis(ocrEngine?: string, mockMode?: boolean): Promise<AnalysisStartResponse> {
     const response = await apiClient.post<AnalysisStartResponse>('/analysis/start', {
-      ocr_engine: ocrEngine || 'library'
+      ocr_engine: ocrEngine || 'library',
+      mock_mode: mockMode || false,
     });
     return response.data;
   },

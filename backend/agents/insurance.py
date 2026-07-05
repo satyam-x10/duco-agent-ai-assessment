@@ -15,6 +15,10 @@ class InsuranceAgent(Agent):
     async def execute(self, state: SharedWorkflowState) -> None:
         logger.info(f"{self.name} resolving policies for member ID {state.member_id}")
         
+        if state.mock_mode:
+            import asyncio
+            await asyncio.sleep(0.8)
+            
         # Resolve patient member details first using formal InsuranceLookupTool
         from tools.insurance_lookup_tool import InsuranceLookupTool
         lookup_tool = InsuranceLookupTool(self.insurance_service)

@@ -1,7 +1,7 @@
 import logging
 from app.core.adk import Agent, SharedWorkflowState
 from app.schemas.intake import DocumentType
-from app.schemas.medical_coding import CodingResult
+from app.schemas.medical_coding import CodingResult, Diagnosis, Procedure
 from services.medical_coding import MedicalCodingService
 
 logger = logging.getLogger(__name__)
@@ -33,9 +33,43 @@ class MedicalCodingAgent(Agent):
                 continue
                 
             logger.info(f"{self.name} executing medical coding on {doc_type.value}")
-            from tools.coding_tool import MedicalCodingTool
-            coding_tool = MedicalCodingTool(self.medical_coding_service)
-            result = await coding_tool.run(doc, reflection_warnings=reflection_warnings)
+            
+            if state.mock_mode:
+                import asyncio
+                await asyncio.sleep(1.0) # Simulate processing delay
+                
+                # Check document type and reflection state to simulate coding outcomes
+                if doc_type == DocumentType.PRIYA_PT_INVOICE:
+                    result = CodingResult(
+                        diagnoses=[Diagnosis(code="M23.231", description="Tear of medial meniscus", confidence=0.96)],
+                        procedures=[
+                            Procedure(code="97161", description="Physical therapy evaluation", confidence=0.98),
+                            Procedure(code="97110", description="Therapeutic exercises", confidence=0.95)
+                        ]
+                    )
+                elif doc_type == DocumentType.AARAV_MRI_REPORT:
+                    result = CodingResult(
+                        diagnoses=[Diagnosis(code="M23.231", description="Tear of medial meniscus", confidence=0.96)],
+                        procedures=[Procedure(code="73721", description="MRI Joint Lower Extremity", confidence=0.97)]
+                    )
+                elif doc_type == DocumentType.SURGEON_ESTIMATE:
+                    # If this is a retry triggered by reviewer warnings, return high confidence.
+                    # Otherwise, return low confidence to trigger the clinician sign-off workflow!
+                    is_reflection = reflection_warnings is not None and len(reflection_warnings) > 0
+                    cpt_29881_confidence = 0.98 if is_reflection else 0.65
+                    result = CodingResult(
+                        diagnoses=[Diagnosis(code="M23.231", description="Tear of medial meniscus", confidence=0.96)],
+                        procedures=[
+                            Procedure(code="29881", description="Arthroscopic Meniscectomy", confidence=cpt_29881_confidence),
+                            Procedure(code="29888", description="ACL reconstruction", confidence=0.95)
+                        ]
+                    )
+                else:
+                    result = CodingResult(diagnoses=[], procedures=[])
+            else:
+                from tools.coding_tool import MedicalCodingTool
+                coding_tool = MedicalCodingTool(self.medical_coding_service)
+                result = await coding_tool.run(doc, reflection_warnings=reflection_warnings)
             
             # Aggregate procedure and diagnosis lists
             aggregated_result.diagnoses.extend(result.diagnoses)

@@ -3,6 +3,7 @@ import { AppLayout } from '../layouts/AppLayout';
 import { HomePage } from '../pages/Home/HomePage';
 import { IntakePage } from '../pages/Intake/IntakePage';
 import { ResultsPage } from '../pages/Results/ResultsPage';
+import { HistoryPage } from '../pages/History/HistoryPage';
 
 export const router = createBrowserRouter([
   {
@@ -20,6 +21,10 @@ export const router = createBrowserRouter([
       {
         path: 'results',
         element: <ResultsPage />,
+      },
+      {
+        path: 'history',
+        element: <HistoryPage />,
       },
     ],
   },

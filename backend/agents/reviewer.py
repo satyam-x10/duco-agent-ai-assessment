@@ -1,7 +1,18 @@
+import os
+import json
 import logging
+from typing import List
+from google import genai
+from pydantic import BaseModel
 from app.core.adk import Agent, SharedWorkflowState
 
 logger = logging.getLogger(__name__)
+
+
+class GeminiReviewResponse(BaseModel):
+    warnings: List[str]
+    requires_human_approval: bool
+    rationale: str
 
 
 class ReviewerAgent(Agent):
@@ -19,7 +30,89 @@ class ReviewerAgent(Agent):
             
         # Clear previous warnings to prevent duplicates during backtracking or retries
         state.warnings = []
-        
+
+        # 1. Run deterministic Python checks (which populate state.warnings and throw ValueErrors if structure is broken)
+        self._run_python_checks(state)
+
+        # 2. Run Gemini clinical report audit if not in mock mode and API key is present
+        if not state.mock_mode:
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if api_key:
+                try:
+                    # Build combined text from parsed documents
+                    combined_text_parts = []
+                    for doc_type, doc in state.processed_documents.items():
+                        combined_text_parts.append(f"--- DOCUMENT TYPE: {doc_type.value} ---\n{doc.extracted_text}\n")
+                    combined_text = "\n".join(combined_text_parts)
+
+                    # Extract codes info
+                    diagnoses_str = ", ".join([f"{d.code} ({d.description})" for d in state.coding_result.diagnoses]) if state.coding_result else "None"
+                    procedures_str = ", ".join([f"{p.code} ({p.description})" for p in state.coding_result.procedures]) if state.coding_result else "None"
+
+                    # Primary / Secondary policy details
+                    primary_policy_info = f"ID: {state.primary_policy.policy_id}, Provider: {state.primary_policy.provider_name}, Members: " + ", ".join([f"{m.first_name} {m.last_name} ({m.role})" for m in state.primary_policy.members]) if state.primary_policy else "None"
+                    secondary_policy_info = f"ID: {state.secondary_policy.policy_id}, Provider: {state.secondary_policy.provider_name}, Members: " + ", ".join([f"{m.first_name} {m.last_name} ({m.role})" for m in state.secondary_policy.members]) if state.secondary_policy else "None"
+
+                    prompt = f"""
+You are an expert medical claims auditor and logical consistency agent.
+Your task is to analyze the extracted document texts, resolved insurance policies, and extracted medical codes (procedures and diagnoses) to decide if the claim is logically consistent, medically necessary, and should go forward/be approved, or if it has discrepancies that require manual clinician review and backtracking.
+
+Clinical Documents (Extracted Text):
+\"\"\"
+{combined_text}
+\"\"\"
+
+Extracted Medical Codes:
+- Diagnoses: {diagnoses_str}
+- Procedures: {procedures_str}
+
+Insurance Policies:
+- Primary Policy: {primary_policy_info}
+- Secondary Policy: {secondary_policy_info}
+
+Please check for and perform these specific validations:
+1. Patient name discrepancies: Validate if the patient names in the clinical documents match the insured members on the active policies.
+   - If a name is missing or mismatched between clinical files and the policy member ID associated with this claim, log a warning prefixing it with `[Policy Inconsistency]`.
+2. Policy name mismatches: Check if the patient name is consistent across primary and secondary policies. If mismatched, log a warning prefixing it with `[Policy Inconsistency]`.
+3. Medical necessity and clinical consistency: Validate if the extracted procedures are medically necessary and fully supported by the findings in the clinical documents.
+   - Crucially: If a procedure (like ACL reconstruction 29888 or Meniscectomy 29881) is listed, but the diagnostic MRI report states that structure is normal, intact, or has no tear (e.g. "no ACL tear"), then the procedure is NOT medically necessary. If a procedure lacks supporting injury diagnosis or clinical justification in the text, log a warning prefixing it with `[Coding Inconsistency]`.
+4. Code confidence: Check if any diagnosis/procedure codes were extracted with low confidence (e.g. < 0.70). If so, log a warning: "Low confidence ...".
+
+If you find policy/name discrepancies or medical coding inconsistencies/lack of medical necessity, set requires_human_approval to true. Provide a detailed audit rationale in your response.
+"""
+
+                    client = genai.Client(api_key=api_key)
+                    logger.info("Calling Gemini API to review/audit claim logical consistency.")
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=prompt,
+                        config={
+                            "response_mime_type": "application/json",
+                            "response_schema": GeminiReviewResponse,
+                        },
+                    )
+
+                    parsed_data = json.loads(response.text)
+                    validated = GeminiReviewResponse(**parsed_data)
+
+                    state.warnings.extend(validated.warnings)
+                    if validated.requires_human_approval:
+                        state.requires_human_approval = True
+                    logger.info(f"Gemini Audit Rationale: {validated.rationale}")
+                    logger.info(f"Gemini Audit complete. Generated {len(validated.warnings)} warnings. Requires human approval: {state.requires_human_approval}")
+
+                except Exception as e:
+                    logger.error(f"Gemini clinical audit failed: {e}", exc_info=True)
+                    # Proceed with existing warnings
+
+        # Check if manual human approval is required due to low confidence warnings or inconsistencies
+        if any("Low confidence" in w or "Inconsistency" in w for w in state.warnings):
+            state.requires_human_approval = True
+            logger.info(f"{self.name} flagged workflow as requiring manual clinician audit approval.")
+            
+        logger.info(f"{self.name} completed validation audit. Generated {len(state.warnings)} warning indicators.")
+
+    def _run_python_checks(self, state: SharedWorkflowState) -> None:
         # 1. Verify existence of primary artifacts
         if not state.financial_report:
             raise ValueError("Structural audit failed: Financial report is missing.")
@@ -99,10 +192,14 @@ class ReviewerAgent(Agent):
             # Procedures exist without supporting diagnoses
             if procedures and not diagnoses:
                 state.warnings.append("[Coding Inconsistency] Extracted procedures exist but no supporting clinical diagnosis was coded.")
-            
-        # Check if manual human approval is required due to low confidence warnings or inconsistencies
-        if any("Low confidence" in w or "Inconsistency" in w for w in state.warnings):
-            state.requires_human_approval = True
-            logger.info(f"{self.name} flagged workflow as requiring manual clinician audit approval.")
-            
-        logger.info(f"{self.name} completed validation audit. Generated {len(state.warnings)} warning indicators.")
+            else:
+                # Check for specific procedure-diagnosis mismatches (medical necessity)
+                has_acl_reconstruction = any(p.code == "29888" for p in procedures)
+                has_acl_tear = any(d.code.startswith("S83.51") for d in diagnoses)
+                if has_acl_reconstruction and not has_acl_tear:
+                    state.warnings.append("[Coding Inconsistency] Extracted procedure 29888 (ACL Reconstruction) lacks a supporting ACL injury diagnosis code (S83.51) in the coding result.")
+
+                has_meniscectomy = any(p.code == "29881" for p in procedures)
+                has_meniscus_tear = any(d.code.startswith("M23.2") or d.code.startswith("S83.2") for d in diagnoses)
+                if has_meniscectomy and not has_meniscus_tear:
+                    state.warnings.append("[Coding Inconsistency] Extracted procedure 29881 (Arthroscopic Meniscectomy) lacks a supporting meniscus tear diagnosis code in the coding result.")

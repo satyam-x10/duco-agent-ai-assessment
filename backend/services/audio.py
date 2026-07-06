@@ -110,12 +110,41 @@ class AudioBriefingService:
         
         financial_text += f"This leaves you with an estimated personal responsibility of {patient_responsibility:.2f} rupees."
 
+        # Add details for any denied / not medically necessary procedures
+        denial_reasons = []
+        if state.cob_decision and state.cob_decision.lines_coverage:
+            for line in state.cob_decision.lines_coverage:
+                notes = line.remaining_balance.notes or ""
+                if "not medically necessary" in notes.lower():
+                    if line.cpt_code == "29888":
+                        denial_reasons.append("the ACL reconstruction procedure is not insurable because the diagnostic MRI report shows no ACL injury")
+                    elif line.cpt_code == "29881":
+                        denial_reasons.append("the Meniscectomy procedure is not insurable because the diagnostic MRI report shows no meniscus tear")
+                    else:
+                        denial_reasons.append(f"procedure {line.cpt_code} is not covered as it is not medically necessary")
+        
+        if denial_reasons:
+            reasons_str = ", and ".join(denial_reasons)
+            financial_text += f" Please note that {reasons_str}."
+
+        # Helper to check if a procedure is medically necessary based on cob_decision
+        def is_medically_necessary(cpt: str) -> bool:
+            if state.cob_decision and state.cob_decision.lines_coverage:
+                for line in state.cob_decision.lines_coverage:
+                    if line.cpt_code == cpt:
+                        notes = line.remaining_balance.notes or ""
+                        if "not medically necessary" in notes.lower():
+                            return False
+            return True
+
         # 6. Section: Pre-Authorization
         preauth_required_insurers = []
         if state.coding_result and state.coding_result.procedures:
             # Check primary rules
             if state.primary_policy:
                 for proc in state.coding_result.procedures:
+                    if not is_medically_necessary(proc.code):
+                        continue
                     for rule in state.primary_policy.coverage_rules:
                         if rule.cpt_code == proc.code and rule.requires_preauth:
                             preauth_required_insurers.append(state.primary_policy.provider_name)
@@ -123,6 +152,8 @@ class AudioBriefingService:
             # Check secondary rules
             if state.secondary_policy:
                 for proc in state.coding_result.procedures:
+                    if not is_medically_necessary(proc.code):
+                        continue
                     for rule in state.secondary_policy.coverage_rules:
                         if rule.cpt_code == proc.code and rule.requires_preauth:
                             preauth_required_insurers.append(state.secondary_policy.provider_name)

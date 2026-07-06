@@ -90,6 +90,9 @@ For each identified code, specify:
 - The standard code value (e.g. M23.231 for tear of meniscus, 29881 for meniscectomy, 97110 for therapeutic exercise)
 - The medical description of the condition or procedure
 - A confidence score between 0.0 and 1.0 based on how explicitly it is documented in the text.
+
+CRITICAL DIRECTIVE ON CLINICAL DIAGNOSTIC PRIORITIZATION:
+Diagnostic reports (such as MRI, radiology, or lab reports) are the gold standard for clinical findings. Do NOT extract an injury/disease diagnosis code (such as ACL tear or meniscus tear) if the diagnostic report explicitly states normal, intact, or unremarkable findings for that anatomical structure, even if a surgeon's cost estimate or invoice lists a CPT code for it. If a procedure is estimated/billed but the diagnostic report shows the structure is normal (e.g., ACL is intact), still extract the CPT procedure code (since it was proposed/billed), but extract a screening or normal observation diagnosis code (e.g., Z04.89 or Z13.820) instead of the injury diagnosis code.
 """
         if reflection_warnings:
             warnings_text = "\n".join(f"- {w}" for w in reflection_warnings)

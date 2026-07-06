@@ -12,6 +12,7 @@ const apiClient = axios.create({
 
 export interface BackendDocumentMetadata {
   filename: string;
+  original_filename?: string;
   size_bytes: number;
   content_type: string;
   upload_time: string;
@@ -54,7 +55,8 @@ export const mapMetadataToUploadedFile = (
   slotId: RequirementSlotId
 ): UploadedFile => {
   return {
-    name: meta.filename,
+    name: meta.original_filename || meta.filename,
+    storedName: meta.filename,
     size: meta.size_bytes,
     type: meta.content_type,
     status: 'ready',
@@ -159,5 +161,20 @@ export const ApiService = {
       params: { job_id: jobId },
     });
     return response.data;
+  },
+
+  /**
+   * Fetches previous assessment job history.
+   */
+  async getAnalysisHistory(): Promise<AnalysisStatusResponse[]> {
+    const response = await apiClient.get<AnalysisStatusResponse[]>('/analysis/history');
+    return response.data;
+  },
+
+  /**
+   * Clears the previous assessment job history.
+   */
+  async clearAnalysisHistory(): Promise<void> {
+    await apiClient.post('/analysis/clear-history');
   },
 };

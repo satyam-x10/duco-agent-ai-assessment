@@ -38,11 +38,15 @@ class COBAgent(Agent):
             billed_amount = CPT_BILLED_AMOUNTS.get(procedure.code, 500.00)
             claim_lines.append(ClaimLine(cpt_code=procedure.code, billed_amount=billed_amount))
             
+        # Extract diagnosis code strings
+        diagnoses = [d.code for d in state.coding_result.diagnoses] if state.coding_result else []
+        
         # Construct Claim
         claim = Claim(
             claim_id=f"CLAIM-{state.claim_id}",
             member_id=state.member_id,
-            lines=claim_lines
+            lines=claim_lines,
+            diagnoses=diagnoses
         )
         
         # Run benefits coordination

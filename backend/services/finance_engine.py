@@ -29,6 +29,7 @@ class FinanceEngine:
         total_deductible_paid = 0.0
         total_coinsurance_paid = 0.0
         total_patient_responsibility = 0.0
+        denial_notes = []
 
         for line_cov in cob_decision.lines_coverage:
             cpt = line_cov.cpt_code
@@ -36,6 +37,11 @@ class FinanceEngine:
             pri_paid = line_cov.primary_coverage.primary_paid
             sec_paid = line_cov.secondary_coverage.secondary_paid
             pat_resp = line_cov.remaining_balance.patient_responsibility
+
+            # Gather denial notes
+            notes = line_cov.remaining_balance.notes
+            if notes and ("not medically necessary" in notes.lower() or "not covered" in notes.lower()):
+                denial_notes.append(notes)
 
             # Calculate deductible vs coinsurance patient out-of-pocket splits
             patient_ded_applied = 0.0
@@ -107,6 +113,13 @@ class FinanceEngine:
             f"The patient out-of-pocket responsibility is ₹{total_patient_responsibility:.2f}, "
             f"comprising ₹{total_deductible_paid:.2f} towards deductibles and ₹{total_coinsurance_paid:.2f} towards coinsurance."
         )
+
+        if denial_notes:
+            unique_denials = []
+            for note in denial_notes:
+                if note not in unique_denials:
+                    unique_denials.append(note)
+            explanation += " Denials/Exclusions: " + " ".join(unique_denials)
 
         patient_responsibility = PatientResponsibility(
             total_deductible=total_deductible_paid,

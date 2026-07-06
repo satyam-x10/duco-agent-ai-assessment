@@ -266,7 +266,7 @@ def test_rule4_preauth_generator_skipping():
 async def test_rule5_reviewer_inconsistency_backtracking():
     """Rule 5: If ReviewerAgent detects inconsistencies, route back to MedicalCodingAgent or InsuranceAgent."""
     # CASE A: Coding Inconsistency (CPT code not covered)
-    state_a = SharedWorkflowState(claim_id="CLAIM-5A", member_id="98765")
+    state_a = SharedWorkflowState(claim_id="CLAIM-5A", member_id="98765", mock_mode=True)
     state_a.processed_documents[DocumentType.USER_QUERY_TRANSCRIPT] = ProcessedDocument(
         document_type=DocumentType.USER_QUERY_TRANSCRIPT,
         extracted_text="Priya Sen Medical Records CPT 99999",
@@ -318,7 +318,7 @@ async def test_rule5_reviewer_inconsistency_backtracking():
     assert "MedicalCodingAgent" not in completed_agents
     
     # CASE B: Policy Inconsistency (Patient Name Mismatch)
-    state_b = SharedWorkflowState(claim_id="CLAIM-5B", member_id="98765")
+    state_b = SharedWorkflowState(claim_id="CLAIM-5B", member_id="98765", mock_mode=True)
     state_b.processed_documents[DocumentType.USER_QUERY_TRANSCRIPT] = ProcessedDocument(
         document_type=DocumentType.USER_QUERY_TRANSCRIPT,
         extracted_text="John Doe Medical Records CPT 97161", # Text has 'John Doe', Policy has 'Priya Sen'

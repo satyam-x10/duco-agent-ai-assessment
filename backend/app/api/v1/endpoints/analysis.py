@@ -2,6 +2,7 @@ import asyncio
 import uuid
 import logging
 from datetime import datetime
+from typing import List
 from fastapi import APIRouter, status, HTTPException
 from app.schemas.analysis import (
     AnalysisStartRequest,
@@ -295,3 +296,46 @@ async def reject_analysis(job_id: str):
     asyncio.create_task(_run_orchestration(job_id))
     
     return {"status": "success", "message": "Job rejected and re-running."}
+
+
+@router.get("/history", response_model=List[AnalysisStatusResponse])
+async def get_analysis_history():
+    """
+    Returns the list of all analysis jobs, sorted by creation time (newest first).
+    """
+    sorted_jobs = sorted(
+        jobs_db.values(),
+        key=lambda j: j["created_at"],
+        reverse=True
+    )
+    
+    history = []
+    for job in sorted_jobs:
+        state = job.get("state")
+        warnings = []
+        if state and hasattr(state, "warnings"):
+            warnings = state.warnings or []
+        history.append(
+            AnalysisStatusResponse(
+                job_id=job["job_id"],
+                status=job["status"],
+                progress_percent=job["progress_percent"],
+                message=job["message"],
+                created_at=job["created_at"],
+                completed_at=job.get("completed_at"),
+                error_details=job.get("error_details"),
+                current_agent=job.get("current_agent"),
+                warnings=warnings,
+            )
+        )
+    return history
+
+
+@router.post("/clear-history")
+async def clear_analysis_history():
+    """
+    Clears all job runs from the in-memory history.
+    """
+    jobs_db.clear()
+    return {"status": "success", "message": "Job history cleared successfully."}
+

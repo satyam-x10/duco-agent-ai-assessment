@@ -1,6 +1,7 @@
 import logging
 from app.core.adk import Agent, SharedWorkflowState
 from app.schemas.intake import DocumentType
+from app.schemas.document_intelligence import ProcessedDocument
 from app.schemas.medical_coding import CodingResult, Diagnosis, Procedure
 from services.medical_coding import MedicalCodingService
 
@@ -27,14 +28,13 @@ class MedicalCodingAgent(Agent):
                 logger.info(f"{self.name} detected active reflection warnings: {reflection_warnings}")
         
         # Analyze clinical files and aggregate coding results
-        for doc_type, doc in state.processed_documents.items():
-            # Skip user transcript query itself for medical coding, process clinical reports/invoices only
-            if doc_type == DocumentType.USER_QUERY_TRANSCRIPT:
-                continue
-                
-            logger.info(f"{self.name} executing medical coding on {doc_type.value}")
-            
-            if state.mock_mode:
+        if state.mock_mode:
+            for doc_type, doc in state.processed_documents.items():
+                # Skip user transcript query itself for medical coding, process clinical reports/invoices only
+                if doc_type == DocumentType.USER_QUERY_TRANSCRIPT:
+                    continue
+                    
+                logger.info(f"{self.name} executing medical coding on {doc_type.value} (Mock Mode)")
                 import asyncio
                 await asyncio.sleep(1.0) # Simulate processing delay
                 
@@ -48,33 +48,84 @@ class MedicalCodingAgent(Agent):
                         ]
                     )
                 elif doc_type == DocumentType.AARAV_MRI_REPORT:
-                    result = CodingResult(
-                        diagnoses=[Diagnosis(code="M23.231", description="Tear of medial meniscus", confidence=0.96)],
-                        procedures=[Procedure(code="73721", description="MRI Joint Lower Extremity", confidence=0.97)]
-                    )
+                    is_normal = True
+                    if doc and doc.extracted_text:
+                        text_lower = doc.extracted_text.lower()
+                        if "tear" in text_lower:
+                            if "no tear" in text_lower or "no acl tear" in text_lower or "no meniscus tear" in text_lower or "intact" in text_lower or "normal" in text_lower or "unremarkable" in text_lower:
+                                is_normal = True
+                            else:
+                                is_normal = False
+                    
+                    if is_normal:
+                        result = CodingResult(
+                            diagnoses=[Diagnosis(code="Z04.89", description="Normal MRI of right knee", confidence=0.99)],
+                            procedures=[Procedure(code="73721", description="MRI Joint Lower Extremity", confidence=0.97)]
+                        )
+                    else:
+                        result = CodingResult(
+                            diagnoses=[Diagnosis(code="M23.231", description="Tear of medial meniscus", confidence=0.96)],
+                            procedures=[Procedure(code="73721", description="MRI Joint Lower Extremity", confidence=0.97)]
+                        )
                 elif doc_type == DocumentType.SURGEON_ESTIMATE:
-                    # If this is a retry triggered by reviewer warnings, return high confidence.
-                    # Otherwise, return low confidence to trigger the clinician sign-off workflow!
+                    is_normal = True
+                    mri_doc = state.processed_documents.get(DocumentType.AARAV_MRI_REPORT)
+                    if mri_doc and mri_doc.extracted_text:
+                        text_lower = mri_doc.extracted_text.lower()
+                        if "tear" in text_lower:
+                            if "no tear" in text_lower or "no acl tear" in text_lower or "no meniscus tear" in text_lower or "intact" in text_lower or "normal" in text_lower or "unremarkable" in text_lower:
+                                is_normal = True
+                            else:
+                                is_normal = False
+                    if not mri_doc:
+                        is_normal = False
+                        
                     is_reflection = reflection_warnings is not None and len(reflection_warnings) > 0
                     cpt_29881_confidence = 0.98 if is_reflection else 0.65
-                    result = CodingResult(
-                        diagnoses=[Diagnosis(code="M23.231", description="Tear of medial meniscus", confidence=0.96)],
-                        procedures=[
-                            Procedure(code="29881", description="Arthroscopic Meniscectomy", confidence=cpt_29881_confidence),
-                            Procedure(code="29888", description="ACL reconstruction", confidence=0.95)
-                        ]
-                    )
+                    
+                    if is_normal:
+                        result = CodingResult(
+                            diagnoses=[Diagnosis(code="Z04.89", description="Normal MRI of right knee", confidence=0.99)],
+                            procedures=[
+                                Procedure(code="29881", description="Arthroscopic Meniscectomy", confidence=cpt_29881_confidence),
+                                Procedure(code="29888", description="ACL reconstruction", confidence=0.95)
+                            ]
+                        )
+                    else:
+                        result = CodingResult(
+                            diagnoses=[Diagnosis(code="M23.231", description="Tear of medial meniscus", confidence=0.96)],
+                            procedures=[
+                                Procedure(code="29881", description="Arthroscopic Meniscectomy", confidence=cpt_29881_confidence),
+                                Procedure(code="29888", description="ACL reconstruction", confidence=0.95)
+                            ]
+                        )
                 else:
                     result = CodingResult(diagnoses=[], procedures=[])
-            else:
-                from tools.coding_tool import MedicalCodingTool
-                coding_tool = MedicalCodingTool(self.medical_coding_service)
-                result = await coding_tool.run(doc, reflection_warnings=reflection_warnings)
+                
+                # Aggregate procedure and diagnosis lists
+                aggregated_result.diagnoses.extend(result.diagnoses)
+                aggregated_result.procedures.extend(result.procedures)
+        else:
+            # LIVE MODE: Concatenate all document contents with structural headers so Gemini can analyze them contextually.
+            combined_text_parts = []
+            for doc_type, doc in state.processed_documents.items():
+                if doc_type == DocumentType.USER_QUERY_TRANSCRIPT:
+                    continue
+                combined_text_parts.append(f"--- DOCUMENT TYPE: {doc_type.value} ---\n{doc.extracted_text}\n")
             
-            # Aggregate procedure and diagnosis lists
-            aggregated_result.diagnoses.extend(result.diagnoses)
-            aggregated_result.procedures.extend(result.procedures)
+            combined_text = "\n".join(combined_text_parts)
+            combined_doc = ProcessedDocument(
+                document_type=DocumentType.AARAV_MRI_REPORT, # placeholder
+                extracted_text=combined_text,
+                page_count=1,
+                confidence=1.0,
+                metadata={"parser": "CombinedProcessor"}
+            )
             
+            from tools.coding_tool import MedicalCodingTool
+            coding_tool = MedicalCodingTool(self.medical_coding_service)
+            aggregated_result = await coding_tool.run(combined_doc, reflection_warnings=reflection_warnings)
+
         # Deduplicate diagnoses (keep the one with the highest confidence)
         unique_diagnoses = {}
         for diag in aggregated_result.diagnoses:

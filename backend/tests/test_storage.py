@@ -45,6 +45,7 @@ async def test_save_valid_file():
     metadata = await service.save_file(mock_file, DocumentType.USER_QUERY_TRANSCRIPT)
     
     assert metadata.filename.startswith("user_query_transcript_")
+    assert metadata.original_filename == "query.txt"
     assert metadata.size_bytes == len(file_content)
     assert metadata.content_type == "text/plain"
     assert metadata.status == "ready"

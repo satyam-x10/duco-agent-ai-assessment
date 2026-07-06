@@ -60,6 +60,17 @@ class PreAuthorizationService:
         # Check if any procedure requires pre-authorization
         any_requires_preauth = False
         procedures = state.coding_result.procedures if state.coding_result else []
+        
+        # Helper to determine if a procedure is medically necessary based on cob_decision
+        def is_medically_necessary(cpt: str) -> bool:
+            if state.cob_decision and state.cob_decision.lines_coverage:
+                for line in state.cob_decision.lines_coverage:
+                    if line.cpt_code == cpt:
+                        notes = line.remaining_balance.notes or ""
+                        if "not medically necessary" in notes.lower():
+                            return False
+            return True
+
         policies = []
         if state.primary_policy:
             policies.append(state.primary_policy)
@@ -68,6 +79,8 @@ class PreAuthorizationService:
             
         for policy in policies:
             for proc in procedures:
+                if not is_medically_necessary(proc.code):
+                    continue
                 for rule in policy.coverage_rules:
                     if rule.cpt_code == proc.code and rule.requires_preauth:
                         any_requires_preauth = True
@@ -78,7 +91,7 @@ class PreAuthorizationService:
                 break
                 
         if not any_requires_preauth:
-            logger.info("No procedure requires pre-authorization. Skipping letter generation.")
+            logger.info("No procedure requires pre-authorization or is medically necessary. Skipping letter generation.")
             return PreAuthResponse(claim_id=state.claim_id, letters=[])
 
         logger.info(f"Generating pre-authorization letters for claim {state.claim_id}")
@@ -142,6 +155,8 @@ class PreAuthorizationService:
             }
 
             for proc in procedures:
+                if not is_medically_necessary(proc.code):
+                    continue
                 cost = cpt_billed_map.get(proc.code, 500.00)
                 if state.cob_decision:
                     for line in state.cob_decision.lines_coverage:

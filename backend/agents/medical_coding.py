@@ -49,8 +49,13 @@ class MedicalCodingAgent(Agent):
                     )
                 elif doc_type == DocumentType.AARAV_MRI_REPORT:
                     is_normal = True
-                    if doc and doc.extracted_text and "tear" in doc.extracted_text.lower():
-                        is_normal = False
+                    if doc and doc.extracted_text:
+                        text_lower = doc.extracted_text.lower()
+                        if "tear" in text_lower:
+                            if "no tear" in text_lower or "no acl tear" in text_lower or "no meniscus tear" in text_lower or "intact" in text_lower or "normal" in text_lower or "unremarkable" in text_lower:
+                                is_normal = True
+                            else:
+                                is_normal = False
                     
                     if is_normal:
                         result = CodingResult(
@@ -65,8 +70,13 @@ class MedicalCodingAgent(Agent):
                 elif doc_type == DocumentType.SURGEON_ESTIMATE:
                     is_normal = True
                     mri_doc = state.processed_documents.get(DocumentType.AARAV_MRI_REPORT)
-                    if mri_doc and mri_doc.extracted_text and "tear" in mri_doc.extracted_text.lower():
-                        is_normal = False
+                    if mri_doc and mri_doc.extracted_text:
+                        text_lower = mri_doc.extracted_text.lower()
+                        if "tear" in text_lower:
+                            if "no tear" in text_lower or "no acl tear" in text_lower or "no meniscus tear" in text_lower or "intact" in text_lower or "normal" in text_lower or "unremarkable" in text_lower:
+                                is_normal = True
+                            else:
+                                is_normal = False
                     if not mri_doc:
                         is_normal = False
                         

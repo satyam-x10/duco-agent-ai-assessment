@@ -12,6 +12,7 @@ from agents.insurance import InsuranceAgent
 from agents.cob import COBAgent
 from agents.finance import FinanceAgent
 from agents.reviewer import ReviewerAgent
+from agents.judge import JudgeAgent
 from app.core.adk import Orchestrator
 
 
@@ -31,6 +32,7 @@ def get_orchestrator() -> Orchestrator:
     cob_agent = COBAgent(cob_engine)
     finance_agent = FinanceAgent(finance_engine)
     reviewer_agent = ReviewerAgent()
+    judge_agent = JudgeAgent()
 
     # The pipeline sequence of specialist agents
     agents = [
@@ -41,6 +43,7 @@ def get_orchestrator() -> Orchestrator:
         cob_agent,
         finance_agent,
         reviewer_agent,
+        judge_agent,
     ]
 
     return Orchestrator(agents)

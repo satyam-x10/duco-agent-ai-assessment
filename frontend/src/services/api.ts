@@ -177,4 +177,52 @@ export const ApiService = {
   async clearAnalysisHistory(): Promise<void> {
     await apiClient.post('/analysis/clear-history');
   },
+
+  /**
+   * Fetches TTS Audio Verdict Summary briefing for a job.
+   */
+  async fetchAudioBriefing(jobId: string): Promise<any> {
+    const response = await apiClient.get(`/analysis/${jobId}/audio`);
+    return response.data;
+  },
+
+  /**
+   * Fetches HITL audit status for a job.
+   */
+  async fetchHitlStatus(jobId: string): Promise<any> {
+    const response = await apiClient.get(`/analysis/${jobId}/hitl-status`);
+    return response.data;
+  },
+
+  /**
+   * Applies clinician override parameters and resumes the pipeline.
+   */
+  async overrideAndResume(jobId: string, overrideData: any): Promise<any> {
+    const response = await apiClient.post(`/analysis/${jobId}/override`, overrideData);
+    return response.data;
+  },
+
+  /**
+   * Generates a synthetic scanned document with scan rotation and noise.
+   */
+  async generateScannedDocument(payload: any): Promise<any> {
+    const response = await apiClient.post('/analysis/documents/generate-scanned', payload);
+    return response.data;
+  },
+
+  /**
+   * Queries CPT procedure rule details from the rules database.
+   */
+  async fetchCptRule(cptCode: string): Promise<any> {
+    const response = await apiClient.get(`/rules/cpt/${cptCode}`);
+    return response.data;
+  },
+
+  /**
+   * Queries ICD-10 diagnosis rule details from the rules database.
+   */
+  async fetchIcdRule(icdCode: string): Promise<any> {
+    const response = await apiClient.get(`/rules/icd/${icdCode}`);
+    return response.data;
+  },
 };

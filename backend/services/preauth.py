@@ -77,10 +77,16 @@ class PreAuthorizationService:
         if state.secondary_policy:
             policies.append(state.secondary_policy)
             
+        from services.rules_database import rules_db
+
         for policy in policies:
             for proc in procedures:
                 if not is_medically_necessary(proc.code):
                     continue
+                # Query both policy rules and external RulesDatabaseService
+                if rules_db.is_preauth_required(proc.code):
+                    any_requires_preauth = True
+                    break
                 for rule in policy.coverage_rules:
                     if rule.cpt_code == proc.code and rule.requires_preauth:
                         any_requires_preauth = True

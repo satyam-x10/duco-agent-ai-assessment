@@ -1,0 +1,104 @@
+{
+  "icd_codes": {
+    "M25.561": {
+      "code": "M25.561",
+      "description": "Pain in right knee",
+      "category": "Musculoskeletal",
+      "is_valid": true,
+      "requires_clinical_notes": true
+    },
+    "M25.562": {
+      "code": "M25.562",
+      "description": "Pain in left knee",
+      "category": "Musculoskeletal",
+      "is_valid": true,
+      "requires_clinical_notes": true
+    },
+    "M23.22": {
+      "code": "M23.22",
+      "description": "Derangement of meniscus due to old tear or injury, right knee",
+      "category": "Musculoskeletal",
+      "is_valid": true,
+      "requires_clinical_notes": true
+    },
+    "M54.5": {
+      "code": "M54.5",
+      "description": "Low back pain",
+      "category": "Musculoskeletal",
+      "is_valid": true,
+      "requires_clinical_notes": false
+    },
+    "R07.9": {
+      "code": "R07.9",
+      "description": "Chest pain, unspecified",
+      "category": "Symptoms",
+      "is_valid": true,
+      "requires_clinical_notes": true
+    },
+    "Z00.00": {
+      "code": "Z00.00",
+      "description": "Encounter for general adult medical examination without abnormal findings",
+      "category": "Preventive",
+      "is_valid": true,
+      "requires_clinical_notes": false
+    }
+  },
+  "cpt_codes": {
+    "97110": {
+      "code": "97110",
+      "description": "Therapeutic procedure, 1 or more areas, each 15 minutes; therapeutic exercises",
+      "category": "Physical Therapy",
+      "standard_billed_amount": 150.00,
+      "allowed_amount": 120.00,
+      "requires_prior_authorization": false
+    },
+    "97112": {
+      "code": "97112",
+      "description": "Neuromuscular reeducation of movement, balance, coordination",
+      "category": "Physical Therapy",
+      "standard_billed_amount": 180.00,
+      "allowed_amount": 140.00,
+      "requires_prior_authorization": false
+    },
+    "97140": {
+      "code": "97140",
+      "description": "Manual therapy techniques, 1 or more regions, each 15 minutes",
+      "category": "Physical Therapy",
+      "standard_billed_amount": 160.00,
+      "allowed_amount": 130.00,
+      "requires_prior_authorization": false
+    },
+    "73721": {
+      "code": "73721",
+      "description": "Magnetic resonance imaging, any joint of lower extremity; without contrast material (Knee MRI)",
+      "category": "Radiology",
+      "standard_billed_amount": 1200.00,
+      "allowed_amount": 850.00,
+      "requires_prior_authorization": true
+    },
+    "73722": {
+      "code": "73722",
+      "description": "Magnetic resonance imaging, lower extremity joint; with contrast material",
+      "category": "Radiology",
+      "standard_billed_amount": 1400.00,
+      "allowed_amount": 950.00,
+      "requires_prior_authorization": true
+    },
+    "29881": {
+      "code": "29881",
+      "description": "Arthroscopy, knee, surgical; with meniscectomy (medial or lateral including any meniscal shaving)",
+      "category": "Surgery",
+      "standard_billed_amount": 4500.00,
+      "allowed_amount": 3200.00,
+      "requires_prior_authorization": true
+    },
+    "99214": {
+      "code": "99214",
+      "description": "Office or other outpatient visit for the evaluation and management of an established patient, moderate complexity",
+      "category": "Evaluation and Management",
+      "standard_billed_amount": 250.00,
+      "allowed_amount": 180.00,
+      "requires_prior_authorization": false
+    }
+  }
+}

@@ -3,7 +3,9 @@ import uuid
 import logging
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, status, HTTPException
+import json
+from fastapi import APIRouter, status, HTTPException, Body
+from fastapi.responses import StreamingResponse, FileResponse
 from app.schemas.analysis import (
     AnalysisStartRequest,
     AnalysisStartResponse,
@@ -338,4 +340,165 @@ async def clear_analysis_history():
     """
     jobs_db.clear()
     return {"status": "success", "message": "Job history cleared successfully."}
+
+
+@router.get("/stream/{job_id}")
+async def stream_agent_logs(job_id: str):
+    """
+    Streams parsed real-time agent execution logs and trace events via Server-Sent Events (SSE).
+    """
+    if job_id not in jobs_db:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+
+    async def log_event_generator():
+        sent_indices = 0
+        while True:
+            job = jobs_db.get(job_id)
+            if not job:
+                break
+            state = job.get("state")
+            if state and hasattr(state, "trace"):
+                traces = state.trace
+                if sent_indices < len(traces):
+                    for entry in traces[sent_indices:]:
+                        payload = json.dumps({
+                            "agent_name": entry.agent_name,
+                            "status": entry.status,
+                            "message": entry.message,
+                            "timestamp": entry.timestamp,
+                            "current_agent": job.get("current_agent"),
+                            "progress": job.get("progress_percent", 0),
+                            "judge_evaluation": getattr(state, "judge_evaluation", None),
+                        })
+                        yield f"data: {payload}\n\n"
+                    sent_indices = len(traces)
+            
+            if job.get("status") in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.AWAITING_APPROVAL] and sent_indices >= len(getattr(state, "trace", [])):
+                done_payload = json.dumps({"status": job.get("status"), "message": "STREAM_FINISHED"})
+                yield f"data: {done_payload}\n\n"
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(log_event_generator(), media_type="text/event-stream")
+
+
+@router.get("/{job_id}/audio")
+async def get_verdict_audio(job_id: str):
+    """
+    Generates and returns the Text-to-Speech (TTS) audio narration summary briefing for the claim verdict.
+    """
+    if job_id not in jobs_db:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+    job = jobs_db[job_id]
+    state = job.get("state")
+    if not state:
+        raise HTTPException(status_code=400, detail="Job state is not ready.")
+
+    from services.audio import AudioBriefingService
+    audio_service = AudioBriefingService()
+    audio_response = audio_service.generate_briefing(state)
+
+    return {
+        "job_id": job_id,
+        "claim_id": state.claim_id,
+        "briefing": audio_response.briefing.model_dump(),
+        "generated_at": audio_response.generated_at
+    }
+
+
+@router.get("/{job_id}/hitl-status")
+async def get_hitl_status(job_id: str):
+    """
+    Retrieves human-in-the-loop (HITL) audit state and details of items requiring clinician review.
+    """
+    if job_id not in jobs_db:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+    job = jobs_db[job_id]
+    state = job.get("state")
+    
+    return {
+        "job_id": job_id,
+        "status": job["status"],
+        "requires_human_approval": getattr(state, "requires_human_approval", False) if state else False,
+        "human_approved": getattr(state, "human_approved", False) if state else False,
+        "judge_evaluation": getattr(state, "judge_evaluation", None) if state else None,
+        "warnings": getattr(state, "warnings", []) if state else [],
+        "coding_result": state.coding_result.model_dump() if state and state.coding_result else None,
+    }
+
+
+@router.post("/{job_id}/override")
+async def override_and_resume(job_id: str, payload: dict = Body(...)):
+    """
+    Allows a human auditor to override ICD-10 or CPT codes or member details and resume pipeline execution.
+    """
+    if job_id not in jobs_db:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+    job = jobs_db[job_id]
+    state = job.get("state")
+    if not state:
+        raise HTTPException(status_code=400, detail="State not initialized.")
+
+    from app.schemas.medical_coding import CodingResult, Diagnosis, Procedure
+    from app.core.adk import TraceEntry
+
+    new_diagnoses = payload.get("diagnoses")
+    new_procedures = payload.get("procedures")
+
+    if new_diagnoses is not None:
+        state.coding_result = state.coding_result or CodingResult()
+        state.coding_result.diagnoses = [Diagnosis(code=d["code"], description=d.get("description", ""), confidence=1.0) for d in new_diagnoses]
+
+    if new_procedures is not None:
+        state.coding_result = state.coding_result or CodingResult()
+        state.coding_result.procedures = [Procedure(code=p["code"], description=p.get("description", ""), confidence=1.0) for p in new_procedures]
+
+    state.human_approved = True
+    state.requires_human_approval = False
+    state.trace.append(
+        TraceEntry(
+            agent_name="ClinicianAuditor",
+            status="success",
+            message="Human Auditor supplied manual code override. Resuming pipeline execution."
+        )
+    )
+
+    job["status"] = JobStatus.PROCESSING
+    job["message"] = "Overridden code state accepted. Resuming adjudication pipeline..."
+    asyncio.create_task(_run_orchestration(job_id))
+
+    return {"status": "success", "message": "Override applied and job resumed."}
+
+
+@router.post("/documents/generate-scanned")
+async def generate_synthetic_scanned_document(payload: dict = Body(...)):
+    """
+    Generates a realistic synthetic scanned medical document with rotation and noise artifacts for intake testing.
+    """
+    from services.document_generator import doc_generator
+    title = payload.get("title", "SUMMIT HEALTHCARE CLINIC")
+    doc_cat = payload.get("document_category", "Surgeon Cost Estimate")
+    patient_name = payload.get("patient_name", "Priya Sen")
+    member_id = payload.get("member_id", "MEM-882194")
+    cpt_code = payload.get("cpt_code", "29881")
+    cpt_desc = payload.get("cpt_desc", "Knee Arthroscopy with Meniscectomy")
+    estimated_amount = float(payload.get("estimated_amount", 3200.00))
+
+    generated_path = doc_generator.generate_scanned_image(
+        title=title,
+        document_category=doc_cat,
+        patient_name=patient_name,
+        member_id=member_id,
+        cpt_code=cpt_code,
+        cpt_desc=cpt_desc,
+        estimated_amount=estimated_amount
+    )
+
+    return {
+        "status": "success",
+        "filename": generated_path.name,
+        "file_path": str(generated_path),
+        "message": f"Synthetic scanned document '{generated_path.name}' generated successfully."
+    }
+
 

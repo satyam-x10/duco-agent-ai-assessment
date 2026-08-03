@@ -1,0 +1,62 @@
+{
+  "rules": {
+    "73721": {
+      "cpt_code": "73721",
+      "procedure_name": "Knee MRI Without Contrast",
+      "requires_preauth": true,
+      "clinical_criteria": [
+        "Conservative therapy (physical therapy, NSAIDs) for at least 4-6 weeks without clinical improvement",
+        "Documented joint pain, instability, or locking on physical exam",
+        "Recent X-ray ruling out acute fracture"
+      ],
+      "required_documents": [
+        "Physician Order / Prescription",
+        "Physical Therapy Treatment Notes (at least 4 weeks)",
+        "Clinical Progress Note from Ordering Physician"
+      ],
+      "turnaround_days": 3,
+      "auto_approval_eligible": true
+    },
+    "73722": {
+      "cpt_code": "73722",
+      "procedure_name": "Knee MRI With Contrast",
+      "requires_preauth": true,
+      "clinical_criteria": [
+        "Suspected infection, tumor, or post-operative tissue evaluation",
+        "Documented clinical rationale for contrast administration"
+      ],
+      "required_documents": [
+        "Specialist Physician Consultation Note",
+        "Lab Work (eGFR / Serum Creatinine within 30 days)"
+      ],
+      "turnaround_days": 5,
+      "auto_approval_eligible": false
+    },
+    "29881": {
+      "cpt_code": "29881",
+      "procedure_name": "Knee Arthroscopic Meniscectomy",
+      "requires_preauth": true,
+      "clinical_criteria": [
+        "MRI confirmation of tear corresponding to localized pain",
+        "Failure of non-operative treatment for > 6 weeks unless acute mechanical locking occurs",
+        "Surgical clearance and orthopedic evaluation note"
+      ],
+      "required_documents": [
+        "Orthopedic Evaluation Note",
+        "MRI Report showing meniscal pathology",
+        "Pre-Operative Assessment Form"
+      ],
+      "turnaround_days": 5,
+      "auto_approval_eligible": false
+    },
+    "97110": {
+      "cpt_code": "97110",
+      "procedure_name": "Physical Therapy - Therapeutic Exercise",
+      "requires_preauth": false,
+      "clinical_criteria": [],
+      "required_documents": [],
+      "turnaround_days": 0,
+      "auto_approval_eligible": true
+    }
+  }
+}

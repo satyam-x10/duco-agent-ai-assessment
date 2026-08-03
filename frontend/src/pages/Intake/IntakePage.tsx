@@ -5,6 +5,11 @@ import { PageContainer } from '../../components/layout/PageContainer';
 import { RequirementSlotCard } from '../../components/intake/RequirementSlotCard';
 import type { RequirementSlot, RequirementSlotId, UploadedFile } from '../../types/intake';
 import { ApiService } from '../../services/api';
+import { AgentTraceVisualizer } from '../../components/intake/AgentTraceVisualizer';
+import { AgentLogStreamer } from '../../components/intake/AgentLogStreamer';
+import { HumanInTheLoopCard } from '../../components/intake/HumanInTheLoopCard';
+import { AudioBriefingPlayer } from '../../components/intake/AudioBriefingPlayer';
+import { ScannedDocGenerator } from '../../components/intake/ScannedDocGenerator';
 
 // ─── Agent metadata ──────────────────────────────────────────────────────────
 const AGENT_META: Record<string, { emoji: string; label: string; description: string }> = {
@@ -433,101 +438,67 @@ export const IntakePage: React.FC = () => {
                         </div>
                     </div>
 
+                    {/* Audio Briefing Player on completed status */}
+                    {activeJobId && (analysisStatus as string) === 'completed' && (
+                        <AudioBriefingPlayer jobId={activeJobId} />
+                    )}
+
+                    {/* Human in the loop card on awaiting approval status */}
+                    {isApproval && activeJobId && (
+                        <HumanInTheLoopCard
+                            jobId={activeJobId}
+                            warnings={reviewWarnings}
+                            onApprove={async () => {
+                                try {
+                                    setPhaseMessage('Approving claim and finalizing reports...');
+                                    await ApiService.approveAnalysis(activeJobId);
+                                    setAnalysisStatus('processing');
+                                    intervalRef.current = setInterval(async () => {
+                                        const r = await ApiService.getAnalysisStatus(activeJobId);
+                                        setProgress(r.progress_percent);
+                                        setPhaseMessage(r.message);
+                                        if (r.status === 'completed') {
+                                            if (intervalRef.current) clearInterval(intervalRef.current);
+                                            setTimeout(() => navigate(`/results?job_id=${activeJobId}`), 500);
+                                        }
+                                    }, 1000);
+                                } catch {
+                                    setErrorMessage('Failed to approve. Please retry.');
+                                    setAnalysisStatus('failed');
+                                }
+                            }}
+                            onOverride={async (overrideData) => {
+                                try {
+                                    setPhaseMessage('Applying clinician code overrides...');
+                                    await ApiService.overrideAndResume(activeJobId, overrideData);
+                                    setAnalysisStatus('processing');
+                                    intervalRef.current = buildPollingLoop(activeJobId, new Set<string>());
+                                } catch {
+                                    setErrorMessage('Failed to apply override. Please retry.');
+                                    setAnalysisStatus('failed');
+                                }
+                            }}
+                        />
+                    )}
+
+                    {/* Real-time Agent Log Streamer */}
+                    <AgentLogStreamer jobId={activeJobId} isStreaming={analysisStatus === 'processing'} />
+
+                    {/* Agent Trace Visualizer */}
+                    <AgentTraceVisualizer
+                        traces={agentFeed.map(f => ({
+                            agent_name: f.agentName,
+                            status: f.status,
+                            message: f.message,
+                            timestamp: f.timestamp
+                        }))}
+                        currentAgent={currentAgent}
+                    />
                     {/* Phase message (only during processing) */}
                     {!isApproval && (
                         <p style={{ fontSize: 12, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', margin: '0 0 4px', lineHeight: 1.5 }}>
                             {phaseMessage}
                         </p>
-                    )}
-
-                    {/* ── APPROVAL PANEL ──────────────────────────────────────────── */}
-                    {isApproval && (
-                        <>
-                            <div style={{ borderRadius: 14, border: '1px solid #fde68a', background: '#fffbeb', padding: 20, marginBottom: 14 }}>
-                                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#92400e', margin: '0 0 8px' }}>⚠️ Why is approval needed?</h3>
-                                <p style={{ fontSize: 12, color: '#78350f', margin: '0 0 14px', lineHeight: 1.7 }}>
-                                    The <strong>Reviewer Agent</strong> completed its quality audit and flagged the issues below. These are <em>not</em> pipeline errors — they are confidence or consistency flags that need a human to verify before the final report is locked.
-                                </p>
-                                {reviewWarnings.length > 0 ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 14 }}>
-                                        {reviewWarnings.map((w, i) => {
-                                            const isLow = w.toLowerCase().includes('low confidence');
-                                            const isPol = w.includes('[Policy Inconsistency]');
-                                            const isCod = w.includes('[Coding Inconsistency]');
-                                            const clr = isLow ? '#dc2626' : isPol ? '#7c3aed' : isCod ? '#d97706' : '#475569';
-                                            const bg = isLow ? '#fef2f2' : isPol ? '#f5f3ff' : isCod ? '#fffbeb' : '#f8fafc';
-                                            const border = isLow ? '#fecaca' : isPol ? '#ddd6fe' : isCod ? '#fde68a' : '#e2e8f0';
-                                            const tag = isLow ? '🔴 Low Confidence' : isPol ? '🟣 Policy Inconsistency' : isCod ? '🟠 Coding Inconsistency' : '⚪ Note';
-                                            return (
-                                                <div key={i} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '9px 13px' }}>
-                                                    <span style={{ fontSize: 10, fontWeight: 700, color: clr, display: 'block', marginBottom: 4 }}>{tag}</span>
-                                                    <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.6 }}>{w.replace('[Policy Inconsistency] ', '').replace('[Coding Inconsistency] ', '')}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <p style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic', marginBottom: 14 }}>No specific warnings returned — generic quality check flagged.</p>
-                                )}
-
-                                <div style={{ borderTop: '1px solid #fde68a', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                                    <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12, color: '#374151' }}>
-                                        <span style={{ background: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: 20, padding: '2px 9px', fontWeight: 700, fontSize: 10, flexShrink: 0, marginTop: 1 }}>APPROVE</span>
-                                        <span>Accept the current codes and <strong>generate the final COB report now</strong>. Use this if the flagged issues are acceptable for this clinical case.</span>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12, color: '#374151' }}>
-                                        <span style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: 20, padding: '2px 9px', fontWeight: 700, fontSize: 10, flexShrink: 0, marginTop: 1 }}>REJECT</span>
-                                        <span>Send the flags above back to <strong>Gemini as a reflection prompt</strong> — the Medical Coding Agent re-runs and tries to fix the specific issues.</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {activeJobId && (
-                                <div style={{ display: 'flex', gap: 10 }}>
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                setPhaseMessage('Approving claim and finalizing reports...');
-                                                await ApiService.approveAnalysis(activeJobId);
-                                                setAnalysisStatus('processing');
-                                                intervalRef.current = setInterval(async () => {
-                                                    const r = await ApiService.getAnalysisStatus(activeJobId);
-                                                    setProgress(r.progress_percent);
-                                                    setPhaseMessage(r.message);
-                                                    if (r.status === 'completed') {
-                                                        if (intervalRef.current) clearInterval(intervalRef.current);
-                                                        setTimeout(() => navigate(`/results?job_id=${activeJobId}`), 500);
-                                                    }
-                                                }, 1000);
-                                            } catch {
-                                                setErrorMessage('Failed to approve. Please retry.');
-                                                setAnalysisStatus('failed');
-                                            }
-                                        }}
-                                        style={{ flex: 1, borderRadius: 10, background: '#059669', color: '#fff', border: 'none', padding: '12px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                                        ✅ Approve Claim
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                setPhaseMessage('Sending rejection + reflection prompt to Gemini...');
-                                                setAgentFeed([]);
-                                                setCurrentAgent(null);
-                                                await ApiService.rejectAnalysis(activeJobId);
-                                                setAnalysisStatus('processing');
-                                                setProgress(40);
-                                                intervalRef.current = buildPollingLoop(activeJobId, new Set<string>());
-                                            } catch {
-                                                setErrorMessage('Failed to submit rejection. Please retry.');
-                                                setAnalysisStatus('failed');
-                                            }
-                                        }}
-                                        style={{ flex: 1, borderRadius: 10, background: '#dc2626', color: '#fff', border: 'none', padding: '12px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                                        🔄 Reject &amp; Refine
-                                    </button>
-                                </div>
-                            )}
-                        </>
                     )}
                 </div>
                 <style>{`
@@ -582,6 +553,9 @@ export const IntakePage: React.FC = () => {
                         <RequirementSlotCard key={slot.id} slot={slot} file={uploadedFiles[slot.id]} onUpload={handleUpload} onRemove={handleRemove} />
                     ))}
                 </div>
+
+                {/* Scanned Document Generator Tool */}
+                <ScannedDocGenerator onDocumentGenerated={() => ApiService.fetchIntakeStatus().then(setUploadedFiles)} />
 
                 {/* Guidelines */}
                 <div style={{ borderRadius: 12, border: '1px solid #f1f5f9', background: '#f8fafc', padding: 16 }}>

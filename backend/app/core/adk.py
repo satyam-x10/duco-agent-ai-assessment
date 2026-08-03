@@ -1,7 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Dict, List, Optional, Callable, Awaitable
+from typing import Dict, List, Optional, Callable, Awaitable, Any
 
 from pydantic import BaseModel, Field
 
@@ -65,6 +65,7 @@ class SharedWorkflowState(BaseModel):
     secondary_policy: Optional[InsurancePolicy] = Field(None, description="Resolved secondary policy details")
     cob_decision: Optional[COBDecision] = Field(None, description="Adjudicated benefits order and coverage calculations")
     financial_report: Optional[FinancialReport] = Field(None, description="Audited payment allocations ledger")
+    judge_evaluation: Optional[Dict[str, Any]] = Field(None, description="LLM-as-a-Judge validation evaluation result")
     warnings: List[str] = Field(default_factory=list, description="Quality, low confidence, or structure audit warnings")
     trace: List[TraceEntry] = Field(default_factory=list, description="Sequence trace log details")
     errors: List[str] = Field(default_factory=list, description="Encountered execution exception details")
@@ -215,8 +216,12 @@ class Orchestrator:
         if "ReviewerAgent" not in completed_agents:
             return "ReviewerAgent", "Financial reports generated. ReviewerAgent is chosen to perform output audits, check clinical code confidence levels, and log warning indicators."
 
-        # 8. Reviewer Inconsistency Backtracking (Rule 5)
-        if "ReviewerAgent" in completed_agents:
+        # 8. LLM-as-a-Judge Audit Validation Loop
+        if "JudgeAgent" in self.agents_dict and "JudgeAgent" not in completed_agents:
+            return "JudgeAgent", "Reviewer audit finished. JudgeAgent is evaluating workflow quality, scoring confidence, and validating non-sequential routing."
+
+        # 9. Judge / Reviewer Inconsistency Backtracking (Rule 5)
+        if "ReviewerAgent" in completed_agents or "JudgeAgent" in completed_agents:
             has_coding_inconsistency = any("[Coding Inconsistency]" in w or "Low confidence" in w for w in state.warnings)
             has_policy_inconsistency = any("[Policy Inconsistency]" in w for w in state.warnings)
 
@@ -236,7 +241,7 @@ class Orchestrator:
                     completed_agents.discard("COBAgent")
                     completed_agents.discard("FinanceAgent")
                     completed_agents.discard("ReviewerAgent")
-                    # Retain inconsistency warning for reflection prompt
+                    completed_agents.discard("JudgeAgent")
                     state.warnings = [w for w in state.warnings if "[Coding Inconsistency]" in w or "Low confidence" in w]
                     state.requires_human_approval = False
                     return "MedicalCodingAgent", "Reviewer flagged coding inconsistency. Backtracking to MedicalCodingAgent for correction."
@@ -256,10 +261,40 @@ class Orchestrator:
                     completed_agents.discard("COBAgent")
                     completed_agents.discard("FinanceAgent")
                     completed_agents.discard("ReviewerAgent")
-                    # Retain policy warning
+                    completed_agents.discard("JudgeAgent")
                     state.warnings = [w for w in state.warnings if "[Policy Inconsistency]" in w]
                     state.requires_human_approval = False
                     return "InsuranceAgent", "Reviewer flagged policy inconsistency. Backtracking to InsuranceAgent for correction."
+
+            # Check Judge evaluation feedback if available
+            judge_eval = state.judge_evaluation or {}
+            target_agent = judge_eval.get("target_backtrack_agent")
+            passed = judge_eval.get("passed", True)
+            requires_human = judge_eval.get("requires_human", False) or state.requires_human_approval
+
+            if requires_human:
+                logger.info("Judge or state flagged HITL requirement. Halting pipeline for clinician approval.")
+                state.requires_human_approval = True
+                state.workflow_status = "awaiting_approval"
+                return None, "Halting pipeline for clinician manual approval."
+
+            if not passed and target_agent and target_agent in self.agents_dict:
+                runs = sum(1 for entry in state.trace if entry.agent_name == target_agent)
+                if runs < 2:
+                    logger.warning(f"JudgeAgent flagged quality failure. Initiating dynamic backtrack loop to {target_agent}.")
+                    state.trace.append(
+                        TraceEntry(
+                            agent_name="Orchestrator",
+                            status="retry",
+                            message=f"JudgeAgent flagged audit quality failure ({judge_eval.get('critique', '')}). Backtracking to {target_agent}."
+                        )
+                    )
+                    completed_agents.discard(target_agent)
+                    completed_agents.discard("COBAgent")
+                    completed_agents.discard("FinanceAgent")
+                    completed_agents.discard("ReviewerAgent")
+                    completed_agents.discard("JudgeAgent")
+                    return target_agent, f"JudgeAgent requested dynamic backtrack to {target_agent} for self-correction."
 
         return None, ""
 
@@ -275,7 +310,7 @@ class Orchestrator:
         state.workflow_status = "running"
 
         # Check if this is the standard production pipeline
-        is_production = len(self.agents_list) == 7 and all(
+        is_production = len(self.agents_list) >= 7 and all(
             name in self.agents_dict for name in [
                 "IntakeAgent", "DocIntelAgent", "MedicalCodingAgent",
                 "InsuranceAgent", "COBAgent", "FinanceAgent", "ReviewerAgent"
@@ -288,8 +323,9 @@ class Orchestrator:
             "MedicalCodingAgent": 55,
             "InsuranceAgent": 70,
             "COBAgent": 85,
-            "FinanceAgent": 95,
-            "ReviewerAgent": 100,
+            "FinanceAgent": 92,
+            "ReviewerAgent": 97,
+            "JudgeAgent": 100,
         }
 
         if is_production:

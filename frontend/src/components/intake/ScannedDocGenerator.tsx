@@ -51,45 +51,45 @@ export const ScannedDocGenerator: React.FC<ScannedDocGeneratorProps> = ({ onDocu
 
       <form onSubmit={handleGenerate} className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
         <div>
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Document Type</label>
+          <label className="block text-[11px] font-semibold text-slate-800 mb-1">Document Type</label>
           <select
             value={docCategory}
             onChange={(e) => setDocCategory(e.target.value)}
-            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white"
+            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white text-black font-medium"
           >
-            <option value="Surgeon Cost Estimate">Surgeon Cost Estimate</option>
-            <option value="Physical Therapy Invoice">Physical Therapy Invoice</option>
-            <option value="MRI Diagnostic Report">MRI Diagnostic Report</option>
+            <option value="Surgeon Cost Estimate" className="text-black">Surgeon Cost Estimate</option>
+            <option value="Physical Therapy Invoice" className="text-black">Physical Therapy Invoice</option>
+            <option value="MRI Diagnostic Report" className="text-black">MRI Diagnostic Report</option>
           </select>
         </div>
 
         <div>
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Patient Name</label>
+          <label className="block text-[11px] font-semibold text-slate-800 mb-1">Patient Name</label>
           <input
             type="text"
             value={patientName}
             onChange={(e) => setPatientName(e.target.value)}
-            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white"
+            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white text-black font-medium"
           />
         </div>
 
         <div>
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">CPT Code</label>
+          <label className="block text-[11px] font-semibold text-slate-800 mb-1">CPT Code</label>
           <input
             type="text"
             value={cptCode}
             onChange={(e) => setCptCode(e.target.value)}
-            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white font-mono"
+            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white text-black font-mono font-medium"
           />
         </div>
 
         <div>
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Billed Amount ($)</label>
+          <label className="block text-[11px] font-semibold text-slate-800 mb-1">Billed Amount ($)</label>
           <input
             type="number"
             value={amount}
             onChange={(e) => setAmount(Number(e.target.value))}
-            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white font-mono"
+            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white text-black font-mono font-medium"
           />
         </div>
 
@@ -97,7 +97,7 @@ export const ScannedDocGenerator: React.FC<ScannedDocGeneratorProps> = ({ onDocu
           <button
             type="submit"
             disabled={loading}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer"
           >
             {loading ? 'Generating Synthetic Scan...' : '✨ Generate Synthetic Scanned Document'}
           </button>

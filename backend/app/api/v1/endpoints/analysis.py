@@ -173,6 +173,7 @@ async def _run_orchestration(job_id: str) -> None:
             job["state"] = state
             logger.info(f"[Job {job_id}] Orchestration finished. Awaiting clinician approval.")
         else:
+            state.workflow_status = "success"
             job["status"] = JobStatus.COMPLETED
             job["progress_percent"] = 100
             job["message"] = "Pipeline completed successfully. Pre-authorization letters and reports are ready."
@@ -232,6 +233,7 @@ async def approve_analysis(job_id: str):
     from app.core.adk import TraceEntry
     state.human_approved = True
     state.requires_human_approval = False
+    state.workflow_status = "success"
     state.trace.append(
         TraceEntry(
             agent_name="ClinicianAuditor",

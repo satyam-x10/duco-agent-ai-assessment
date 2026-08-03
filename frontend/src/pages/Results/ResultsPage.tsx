@@ -166,7 +166,7 @@ const PreAuthLettersPanel: React.FC<{ letters: any[]; preauthLettersMetadata?: a
             (meta: any) => meta.insurer_name === letter.insurer_name
           );
           const downloadUrl = matchingMetadata ? matchingMetadata.download_url : '';
-          
+
           return (
             <div key={i} className="border border-slate-150 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
               <button
@@ -543,6 +543,7 @@ export const ResultsPage: React.FC = () => {
         </div>
       )}
 
+
       {/* Dashboard Main Grid Layout */}
       <div className="grid gap-8 lg:grid-cols-12 items-start">
 
@@ -585,19 +586,19 @@ export const ResultsPage: React.FC = () => {
             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Coverage Decision Breakdown</h3>
               <p className="text-[11px] text-slate-450 mb-4">Per-procedure adjudication showing exactly which procedures were covered or denied by each insurer and why.</p>
-              
+
               <div className="space-y-3">
                 {report.cob_lines.map((line: any, idx: number) => {
                   const currSym = report.financial_summary.currency === 'INR' ? '₹' : '$';
                   const allDenied = !line.is_primary_covered && !line.is_secondary_covered;
                   const partialDenied = line.is_primary_covered && !line.is_secondary_covered && line.secondary_paid === 0;
-                  
+
                   let borderColor = 'border-emerald-200';
                   let bgColor = 'bg-emerald-50/30';
                   let statusIcon = '✅';
                   let statusText = 'Covered';
                   let statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-                  
+
                   if (allDenied) {
                     borderColor = 'border-rose-200';
                     bgColor = 'bg-rose-50/30';
@@ -611,7 +612,7 @@ export const ResultsPage: React.FC = () => {
                     statusText = 'Partial';
                     statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
                   }
-                  
+
                   return (
                     <div key={idx} className={`rounded-xl border ${borderColor} ${bgColor} p-4 transition-all hover:shadow-sm`}>
                       {/* Header row */}
@@ -631,7 +632,7 @@ export const ResultsPage: React.FC = () => {
                         </div>
                         <span className="text-sm font-extrabold text-slate-800">{currSym}{line.billed_amount.toFixed(2)}</span>
                       </div>
-                      
+
                       {/* Payment details grid */}
                       <div className="grid grid-cols-3 gap-3 text-xs">
                         {/* Primary */}
@@ -651,7 +652,7 @@ export const ResultsPage: React.FC = () => {
                             </p>
                           )}
                         </div>
-                        
+
                         {/* Secondary */}
                         <div className={`rounded-lg p-2.5 ${line.is_secondary_covered ? 'bg-indigo-50/60 border border-indigo-100' : 'bg-slate-50 border border-slate-150'}`}>
                           <div className="flex items-center gap-1.5 mb-1">
@@ -665,7 +666,7 @@ export const ResultsPage: React.FC = () => {
                             <p className="text-[10px] text-slate-450 mt-0.5">Ded credited: {currSym}{line.secondary_deductible.toFixed(0)}</p>
                           )}
                         </div>
-                        
+
                         {/* Patient */}
                         <div className={`rounded-lg p-2.5 ${allDenied ? 'bg-rose-50/60 border border-rose-150' : 'bg-amber-50/60 border border-amber-100'}`}>
                           <div className="flex items-center gap-1.5 mb-1">
@@ -680,14 +681,13 @@ export const ResultsPage: React.FC = () => {
                           )}
                         </div>
                       </div>
-                      
+
                       {/* Notes / denial reason */}
                       {line.notes && (
-                        <div className={`mt-2.5 rounded-lg px-3 py-2 text-[11px] leading-relaxed font-medium ${
-                          allDenied 
-                            ? 'bg-rose-50 text-rose-800 border border-rose-150' 
+                        <div className={`mt-2.5 rounded-lg px-3 py-2 text-[11px] leading-relaxed font-medium ${allDenied
+                            ? 'bg-rose-50 text-rose-800 border border-rose-150'
                             : 'bg-slate-50/80 text-slate-600 border border-slate-100'
-                        }`}>
+                          }`}>
                           {allDenied && <span className="font-bold text-rose-700">⛔ Denial Reason: </span>}
                           {line.notes}
                         </div>
@@ -696,7 +696,7 @@ export const ResultsPage: React.FC = () => {
                   );
                 })}
               </div>
-              
+
               {/* Summary footer for denied procedures */}
               {report.cob_lines.some((l: any) => !l.is_primary_covered) && (
                 <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/40 p-4">
@@ -705,9 +705,9 @@ export const ResultsPage: React.FC = () => {
                     <div>
                       <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wide">Coverage Denial Summary</h4>
                       <p className="text-[11px] text-rose-800 mt-1 leading-relaxed">
-                        {report.cob_lines.filter((l: any) => !l.is_primary_covered).length} of {report.cob_lines.length} procedure(s) were 
-                        <strong> not covered</strong> by the primary insurer. This may be because the uploaded documents contained procedures 
-                        that are excluded from your policy, or the extracted CPT codes do not match any covered services. 
+                        {report.cob_lines.filter((l: any) => !l.is_primary_covered).length} of {report.cob_lines.length} procedure(s) were
+                        <strong> not covered</strong> by the primary insurer. This may be because the uploaded documents contained procedures
+                        that are excluded from your policy, or the extracted CPT codes do not match any covered services.
                         Review the denial reasons above and contact your insurer for appeals if needed.
                       </p>
                     </div>
@@ -929,11 +929,10 @@ export const ResultsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={togglePlayAudio}
-                className={`mt-3.5 rounded-lg border px-4 py-1.5 text-xs font-bold transition-colors w-full cursor-pointer ${
-                  isPlayingAudio
+                className={`mt-3.5 rounded-lg border px-4 py-1.5 text-xs font-bold transition-colors w-full cursor-pointer ${isPlayingAudio
                     ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
+                  }`}
               >
                 {isPlayingAudio ? '⏹️ Stop Audio Briefing' : '🔊 Play Audio Briefing'}
               </button>

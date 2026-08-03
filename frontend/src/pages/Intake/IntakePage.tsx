@@ -9,7 +9,6 @@ import { AgentTraceVisualizer } from '../../components/intake/AgentTraceVisualiz
 import { AgentLogStreamer } from '../../components/intake/AgentLogStreamer';
 import { HumanInTheLoopCard } from '../../components/intake/HumanInTheLoopCard';
 import { AudioBriefingPlayer } from '../../components/intake/AudioBriefingPlayer';
-import { ScannedDocGenerator } from '../../components/intake/ScannedDocGenerator';
 
 // ─── Agent metadata ──────────────────────────────────────────────────────────
 const AGENT_META: Record<string, { emoji: string; label: string; description: string }> = {
@@ -553,9 +552,6 @@ export const IntakePage: React.FC = () => {
                         <RequirementSlotCard key={slot.id} slot={slot} file={uploadedFiles[slot.id]} onUpload={handleUpload} onRemove={handleRemove} />
                     ))}
                 </div>
-
-                {/* Scanned Document Generator Tool */}
-                <ScannedDocGenerator onDocumentGenerated={() => ApiService.fetchIntakeStatus().then(setUploadedFiles)} />
 
                 {/* Guidelines */}
                 <div style={{ borderRadius: 12, border: '1px solid #f1f5f9', background: '#f8fafc', padding: 16 }}>

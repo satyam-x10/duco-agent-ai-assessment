@@ -58,7 +58,7 @@ async def get_report_summary(job_id: str):
 
     # Retrieve real workflow state
     state: Optional[SharedWorkflowState] = job.get("state")
-    if not state or state.workflow_status != "success":
+    if not state or (state.workflow_status != "success" and not (state.financial_report and state.cob_decision)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Workflow state is missing or incomplete despite job completion. This is an internal error."

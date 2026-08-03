@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/layout/PageContainer';
+import { ScannedDocGenerator } from '../../components/intake/ScannedDocGenerator';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
@@ -18,34 +19,11 @@ export const HomePage: React.FC = () => {
           </span>
         </div>
 
-        {/* Title & Description */}
-        <div className="space-y-4">
-          <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white">
-            DuCO-Agent
-          </h1>
-          <p className="text-lg sm:text-xl font-medium text-slate-300">
-            Enterprise Multi-Agent Healthcare Coordination
-          </p>
-          <p className="text-sm sm:text-base text-slate-400 max-w-xl mx-auto leading-relaxed">
-            An orchestration engine utilizing 7 specialist AI agents to parse medical intake documents, coordinate dual-coverage benefits, and draft prior authorization reviews.
-          </p>
-        </div>
 
-        {/* Call to Actions */}
-        <div className="flex justify-center gap-4">
-          <button
-            onClick={() => navigate('/intake')}
-            className="px-6 py-3 rounded-lg font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors cursor-pointer"
-          >
-            Open Workspace
-          </button>
-          <button
-            onClick={() => navigate('/results')}
-            className="px-6 py-3 rounded-lg font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/50 transition-colors cursor-pointer"
-          >
-            View Results
-          </button>
-        </div>
+        {/* Synthetic Scanned Document Generator Tool */}
+        <ScannedDocGenerator />
+
+
 
         {/* Minimal Pipeline Agent List */}
         <div className="pt-12 border-t border-slate-800/60">
@@ -62,8 +40,8 @@ export const HomePage: React.FC = () => {
               { label: 'Finance Ledger', emoji: '💰' },
               { label: 'Reviewer Audit', emoji: '🔎' }
             ].map((agent, index) => (
-              <div 
-                key={index} 
+              <div
+                key={index}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-800/40 border border-slate-800"
               >
                 <span>{agent.emoji}</span>

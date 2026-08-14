@@ -11,6 +11,7 @@ from app.schemas.cob_engine import (
     RemainingBalance,
     ClaimLineCoverage,
     COBDecision,
+    PatientClaimSummary,
 )
 from services.insurance_engine import InsuranceService
 from services.clinical_rules import ClinicalRulesService
@@ -48,9 +49,12 @@ class COBEngine:
     def check_medical_necessity(self, cpt_code: str, diagnosis_codes: List[str]) -> Tuple[bool, str]:
         """Checks if a CPT procedure is medically necessary based on clinical rule catalog."""
         if not diagnosis_codes:
-            return True, ""
+            return False, (
+                f"CPT {cpt_code} cannot be adjudicated because no supporting diagnosis was supplied; "
+                "manual clinical review is required."
+            )
         supports, rationale = self.clinical_rules_service.supports(cpt_code, diagnosis_codes)
-        if supports is False:
+        if supports is not True:
             return False, rationale
         return True, ""
 
@@ -167,11 +171,19 @@ class COBEngine:
         rem_indiv_oop: dict[str, Decimal] = {}
 
         for p in matched_policies:
-            rem_fam_ded[p.policy_id] = _d(p.deductible.remaining_family)
+            stored_family = getattr(self.insurance_service, "_family_deductibles", {}).get(
+                p.policy_id, p.deductible.remaining_family
+            )
+            rem_fam_ded[p.policy_id] = _d(stored_family)
             for m in p.members:
                 key = f"{p.policy_id}:{m.member_id}"
-                rem_indiv_ded[key] = _d(p.deductible.remaining_individual)
-                rem_indiv_oop[key] = _d(p.remaining_out_of_pocket_max)
+                if hasattr(self.insurance_service, "get_accumulator"):
+                    accumulator = self.insurance_service.get_accumulator(p, m.member_id)
+                    rem_indiv_ded[key] = _d(accumulator["remaining_individual_deductible"])
+                    rem_indiv_oop[key] = _d(accumulator["remaining_out_of_pocket_max"])
+                else:
+                    rem_indiv_ded[key] = _d(p.deductible.remaining_individual)
+                    rem_indiv_oop[key] = _d(p.remaining_out_of_pocket_max)
 
         lines_coverage: List[ClaimLineCoverage] = []
         tot_billed = Decimal("0.00")
@@ -210,7 +222,8 @@ class COBEngine:
                 rem_indiv_oop[sec_key] = _d(secondary_policy.remaining_out_of_pocket_max)
 
             # Check medical necessity
-            is_necessary, necessity_notes = self.check_medical_necessity(line.cpt_code, claim.diagnoses or [])
+            diagnosis_codes = line.diagnoses or claim.diagnoses or []
+            is_necessary, necessity_notes = self.check_medical_necessity(line.cpt_code, diagnosis_codes)
 
             # ----------------------------------------------------
             # 1. Primary Adjudication
@@ -259,9 +272,6 @@ class COBEngine:
 
                     primary_policy.deductible.remaining_individual = _f(rem_indiv_ded[pri_key])
                     primary_policy.deductible.remaining_family = _f(rem_fam_ded[primary_policy.policy_id])
-                    if hasattr(self.insurance_service, "_policies") and primary_policy.policy_id in self.insurance_service._policies:
-                        self.insurance_service._policies[primary_policy.policy_id].deductible.remaining_individual = _f(rem_indiv_ded[pri_key])
-                        self.insurance_service._policies[primary_policy.policy_id].deductible.remaining_family = _f(rem_fam_ded[primary_policy.policy_id])
 
                 # Apply Coinsurance
                 subject_to_coins = rem_allowed_after_copay - pri_ded_d
@@ -281,6 +291,15 @@ class COBEngine:
                     pri_coins_amt_d = max(Decimal("0.00"), pri_patient_resp_d - pri_copay_d - pri_ded_d)
 
                 rem_indiv_oop[pri_key] = max(Decimal("0.00"), rem_oop - pri_patient_resp_d)
+
+                if hasattr(self.insurance_service, "update_accumulator"):
+                    self.insurance_service.update_accumulator(
+                        primary_policy,
+                        primary_mem_id,
+                        remaining_individual_deductible=_f(rem_indiv_ded[pri_key]),
+                        remaining_family_deductible=_f(rem_fam_ded[primary_policy.policy_id]),
+                        remaining_out_of_pocket_max=_f(rem_indiv_oop[pri_key]),
+                    )
 
             primary_coverage = PrimaryCoverage(
                 policy_id=str(primary_policy.policy_id) if primary_policy and primary_policy.policy_id else "",
@@ -315,18 +334,32 @@ class COBEngine:
             elif secondary_policy and is_pri_covered:
                 if sec_rule and sec_rule.is_covered:
                     is_sec_covered = True
-                    # Calculate secondary normal benefit if primary had not paid
+                    # Calculate the secondary's normal benefit as if it were
+                    # primary, using its own allowed amount, copay, deductible,
+                    # coinsurance, and family accumulator.
+                    sec_allowed_d = billed_d
+                    sec_allowed_value = getattr(sec_rule, "allowed_amount", None)
+                    if sec_allowed_value is not None:
+                        sec_allowed_d = min(billed_d, _d(sec_allowed_value))
+                    sec_copay_d = min(sec_allowed_d, _d(getattr(sec_rule, "copay", 0.0)))
+                    sec_subject_after_copay = sec_allowed_d - sec_copay_d
                     sec_rem_ded = rem_indiv_ded[sec_key]
-                    sec_ded_applied_if_primary = min(pri_allowed_d, sec_rem_ded)
+                    sec_fam = rem_fam_ded[secondary_policy.policy_id]
+                    if getattr(sec_rule, "deductible_applies", True):
+                        sec_ded_applied_if_primary = min(sec_subject_after_copay, sec_rem_ded, sec_fam)
+                    else:
+                        sec_ded_applied_if_primary = Decimal("0.00")
                     sec_coins_rate_d = _d(secondary_policy.coinsurance.rate)
-                    sec_normal_paid = ((pri_allowed_d - sec_ded_applied_if_primary) * (Decimal("1.00") - sec_coins_rate_d)).quantize(PENCE, rounding=ROUND_HALF_UP)
+                    sec_normal_paid = (
+                        (sec_subject_after_copay - sec_ded_applied_if_primary)
+                        * (Decimal("1.00") - sec_coins_rate_d)
+                    ).quantize(PENCE, rounding=ROUND_HALF_UP)
 
                     # Secondary pays lesser of remaining patient responsibility or normal benefit
                     sec_paid_d = min(pri_patient_resp_d, sec_normal_paid)
                     sec_ded_satisfied = min(pri_patient_resp_d, sec_ded_applied_if_primary)
 
                     rem_indiv_ded[sec_key] = max(Decimal("0.00"), sec_rem_ded - sec_ded_satisfied)
-                    sec_fam = rem_fam_ded[secondary_policy.policy_id]
                     rem_fam_ded[secondary_policy.policy_id] = max(Decimal("0.00"), sec_fam - sec_ded_satisfied)
 
                     sec_ded_d = sec_ded_satisfied
@@ -334,9 +367,6 @@ class COBEngine:
 
                     secondary_policy.deductible.remaining_individual = _f(rem_indiv_ded[sec_key])
                     secondary_policy.deductible.remaining_family = _f(rem_fam_ded[secondary_policy.policy_id])
-                    if hasattr(self.insurance_service, "_policies") and secondary_policy.policy_id in self.insurance_service._policies:
-                        self.insurance_service._policies[secondary_policy.policy_id].deductible.remaining_individual = _f(rem_indiv_ded[sec_key])
-                        self.insurance_service._policies[secondary_policy.policy_id].deductible.remaining_family = _f(rem_fam_ded[secondary_policy.policy_id])
 
                     # Apply secondary OOP Maximum
                     sec_oop = rem_indiv_oop[sec_key]
@@ -346,6 +376,15 @@ class COBEngine:
                         sec_paid_d += excess
 
                     rem_indiv_oop[sec_key] = max(Decimal("0.00"), sec_oop - sec_patient_resp_d)
+
+                    if hasattr(self.insurance_service, "update_accumulator"):
+                        self.insurance_service.update_accumulator(
+                            secondary_policy,
+                            secondary_mem_id,
+                            remaining_individual_deductible=_f(rem_indiv_ded[sec_key]),
+                            remaining_family_deductible=_f(rem_fam_ded[secondary_policy.policy_id]),
+                            remaining_out_of_pocket_max=_f(rem_indiv_oop[sec_key]),
+                        )
 
                     notes_msg = (
                         f"Patient: {patient_name}. "
@@ -358,17 +397,28 @@ class COBEngine:
                 # Primary excluded procedure; secondary processes as primary
                 if sec_rule and sec_rule.is_covered:
                     is_sec_covered = True
+                    sec_allowed_d = billed_d
+                    sec_allowed_value = getattr(sec_rule, "allowed_amount", None)
+                    if sec_allowed_value is not None:
+                        sec_allowed_d = min(billed_d, _d(sec_allowed_value))
+                    sec_copay_d = min(sec_allowed_d, _d(getattr(sec_rule, "copay", 0.0)))
+                    sec_subject_after_copay = sec_allowed_d - sec_copay_d
                     sec_rem_ded = rem_indiv_ded[sec_key]
-                    sec_ded_d = min(billed_d, sec_rem_ded)
-                    rem_indiv_ded[sec_key] = max(Decimal("0.00"), sec_rem_ded - sec_ded_d)
                     sec_fam = rem_fam_ded[secondary_policy.policy_id]
+                    if getattr(sec_rule, "deductible_applies", True):
+                        sec_ded_d = min(sec_subject_after_copay, sec_rem_ded, sec_fam)
+                    rem_indiv_ded[sec_key] = max(Decimal("0.00"), sec_rem_ded - sec_ded_d)
                     rem_fam_ded[secondary_policy.policy_id] = max(Decimal("0.00"), sec_fam - sec_ded_d)
 
                     sec_coins_rate_d = _d(secondary_policy.coinsurance.rate)
-                    subject_to_coins = billed_d - sec_ded_d
+                    subject_to_coins = sec_subject_after_copay - sec_ded_d
                     sec_coins_amt_d = (subject_to_coins * sec_coins_rate_d).quantize(PENCE, rounding=ROUND_HALF_UP)
                     sec_paid_d = subject_to_coins - sec_coins_amt_d
-                    sec_patient_resp_d = sec_ded_d + sec_coins_amt_d
+                    sec_patient_resp_d = sec_copay_d + sec_ded_d + sec_coins_amt_d
+
+                    # When only the secondary covers a line, its contractual
+                    # write-off is the applicable provider discount.
+                    pri_writeoff_d = billed_d - sec_allowed_d
 
                     sec_oop = rem_indiv_oop[sec_key]
                     if sec_patient_resp_d > sec_oop:
@@ -378,6 +428,14 @@ class COBEngine:
                         sec_coins_amt_d = max(Decimal("0.00"), sec_patient_resp_d - sec_ded_d)
 
                     rem_indiv_oop[sec_key] = max(Decimal("0.00"), sec_oop - sec_patient_resp_d)
+                    if hasattr(self.insurance_service, "update_accumulator"):
+                        self.insurance_service.update_accumulator(
+                            secondary_policy,
+                            secondary_mem_id,
+                            remaining_individual_deductible=_f(rem_indiv_ded[sec_key]),
+                            remaining_family_deductible=_f(rem_fam_ded[secondary_policy.policy_id]),
+                            remaining_out_of_pocket_max=_f(rem_indiv_oop[sec_key]),
+                        )
                     notes_msg = f"Patient: {patient_name}. Excluded by primary. Secondary paid ₹{_f(sec_paid_d):.2f}."
                 else:
                     notes_msg = "Procedure excluded by both primary and secondary policies."
@@ -399,6 +457,7 @@ class COBEngine:
             # ----------------------------------------------------
             # 3. Line-Level Financial Invariant Verification
             # ----------------------------------------------------
+            primary_coverage.contractual_writeoff = _f(pri_writeoff_d)
             line_sum = pri_paid_d + sec_paid_d + sec_patient_resp_d + pri_writeoff_d
             if line_sum != billed_d:
                 raise ArithmeticError(
@@ -423,6 +482,9 @@ class COBEngine:
                 ClaimLineCoverage(
                     cpt_code=line.cpt_code,
                     billed_amount=_f(billed_d),
+                    member_id=line.member_id or claim.member_id,
+                    patient_name=line.patient_name or patient_name,
+                    source_document=line.source_document,
                     primary_coverage=primary_coverage,
                     secondary_coverage=secondary_coverage,
                     remaining_balance=remaining_balance,
@@ -437,6 +499,18 @@ class COBEngine:
             secondary_policy_id=str(secondary_policy.policy_id) if secondary_policy and secondary_policy.policy_id else None,
             secondary_provider=str(secondary_policy.provider_name) if secondary_policy and secondary_policy.provider_name else None,
             lines_coverage=lines_coverage,
+            patient_claims=[
+                PatientClaimSummary(
+                    member_id=claim.member_id,
+                    patient_name=patient_name,
+                    primary_policy_id=str(primary_policy.policy_id) if primary_policy else None,
+                    secondary_policy_id=str(secondary_policy.policy_id) if secondary_policy else None,
+                    total_billed=_f(tot_billed),
+                    total_primary_paid=_f(tot_primary_paid),
+                    total_secondary_paid=_f(tot_secondary_paid),
+                    total_patient_responsibility=_f(tot_patient_resp),
+                )
+            ],
             total_billed=_f(tot_billed),
             total_primary_paid=_f(tot_primary_paid),
             total_secondary_paid=_f(tot_secondary_paid),

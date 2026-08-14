@@ -1,217 +1,159 @@
 import logging
 from datetime import datetime
-from string import Template
-from typing import List, Optional
+from typing import Dict, List, Tuple
 
-from app.schemas.cob_engine import COBDecision
-from app.schemas.preauth import PreAuthLetter, PreAuthResponse
 from app.core.adk import SharedWorkflowState
+from app.schemas.preauth import PreAuthLetter, PreAuthResponse
 
 logger = logging.getLogger(__name__)
 
-LETTER_TEMPLATE = """# PRIOR AUTHORIZATION REQUEST
-**DATE:** ${date_generated}
-**TO:** Prior Authorization Department, ${insurer_name}
-**FAX / PORTAL SECURE SUBMISSION**
-
----
-
-### 1. PATIENT & POLICY INFORMATION
-*   **Patient Name:** ${patient_name}
-*   **Date of Birth:** ${patient_dob}
-*   **Member ID:** ${member_id}
-*   **Policy ID / Plan:** ${policy_id}
-*   **Group Number:** ${group_number}
-
-### 2. PROVIDER / CLINICAL SITE INFORMATION
-*   **Requesting Provider:** Dr. Sarah Jenkins, MD
-*   **Provider NPI:** 1982736450
-*   **Facility Name:** Summit Healthcare Clinic
-*   **Facility Address:** 1200 Medical Center Pkwy, Suite 400, Summit, NJ 07901
-*   **Contact Phone:** (555) 0199-2831
-*   **Contact Fax:** (555) 0199-2832
-
-### 3. DIAGNOSIS (ICD-10-CM CODES)
-${diagnoses_list}
-
-### 4. REQUESTED PROCEDURES & ESTIMATED COST BREAKDOWN
-The following procedures are requested for prior authorization review under this policy:
-
-| CPT Code | Procedure Description | Estimated Billed | Requires Pre-Auth? |
-| :--- | :--- | :--- | :--- |
-${procedures_rows}
-
-*   **Total Estimated Billed Charges:** ₹${total_billed}
-
-### 5. CLINICAL STATEMENT & MEDICAL NECESSITY
-*   **Primary Clinical Indications:** ${clinical_findings}
-*   **Medical Necessity Summary:** The requested services/procedures listed above are indicated as medically necessary for the management of the patient's diagnosed condition (${primary_diagnosis_code} - ${primary_diagnosis_desc}). Failure to authorize these services may lead to progressive functional decline, joint instability, or chronic pain conditions. Physical therapist or surgeon evaluations confirm that conservative treatments have been evaluated, and the requested interventions represent the current standard of clinical care.
-
----
-**Prepared By:** Summit Healthcare Prior Authorization Team
-**NPI / Representative Signature:** *Dr. Sarah Jenkins, MD*
-"""
-
 
 class PreAuthorizationService:
-    """Service responsible for generating professional pre-authorization request letters from claims details."""
+    """Generate source-grounded clinician-review drafts for required procedures only."""
+
+    @staticmethod
+    def _line_is_eligible(state: SharedWorkflowState, cpt_code: str, member_id: str) -> bool:
+        if not state.cob_decision:
+            return False
+        for line in state.cob_decision.lines_coverage:
+            if line.cpt_code == cpt_code and line.member_id == member_id:
+                notes = (line.remaining_balance.notes or "").lower()
+                return "not medically necessary" not in notes and "manual clinical review" not in notes
+        return False
+
+    @staticmethod
+    def _patient_on_policy(policy, member_id: str, patient_name: str):
+        direct = next((member for member in policy.members if member.member_id == member_id), None)
+        if direct:
+            return direct
+        target = patient_name.lower()
+        return next(
+            (member for member in policy.members if f"{member.first_name} {member.last_name}".lower() == target),
+            None,
+        )
 
     def generate_letters(self, state: SharedWorkflowState) -> PreAuthResponse:
-        # Check if any procedure requires pre-authorization
-        any_requires_preauth = False
-        procedures = state.coding_result.procedures if state.coding_result else []
-        
-        # Helper to determine if a procedure is medically necessary based on cob_decision
-        def is_medically_necessary(cpt: str) -> bool:
-            if state.cob_decision and state.cob_decision.lines_coverage:
-                for line in state.cob_decision.lines_coverage:
-                    if line.cpt_code == cpt:
-                        notes = line.remaining_balance.notes or ""
-                        if "not medically necessary" in notes.lower():
-                            return False
-            return True
-
-        policies = []
-        if state.primary_policy:
-            policies.append(state.primary_policy)
-        if state.secondary_policy:
-            policies.append(state.secondary_policy)
-            
-        for policy in policies:
-            for proc in procedures:
-                if not is_medically_necessary(proc.code):
-                    continue
-                for rule in policy.coverage_rules:
-                    if rule.cpt_code == proc.code and rule.requires_preauth:
-                        any_requires_preauth = True
-                        break
-                if any_requires_preauth:
-                    break
-            if any_requires_preauth:
-                break
-                
-        if not any_requires_preauth:
-            logger.info("No procedure requires pre-authorization or is medically necessary. Skipping letter generation.")
+        if not state.claim_lines:
             return PreAuthResponse(claim_id=state.claim_id, letters=[])
 
-        logger.info(f"Generating pre-authorization letters for claim {state.claim_id}")
+        policies = [policy for policy in (state.primary_policy, state.secondary_policy) if policy]
+        procedure_descriptions = {
+            procedure.code: procedure.description
+            for procedure in (state.coding_result.procedures if state.coding_result else [])
+        }
 
-        patient_name = state.patient_name
-        if not patient_name and state.financial_report and state.financial_report.patient_name:
-            patient_name = state.financial_report.patient_name
-        elif not patient_name and state.cob_decision and state.cob_decision.patient_name:
-            patient_name = state.cob_decision.patient_name
-        elif not patient_name and state.primary_policy:
-            matching = next((m for m in state.primary_policy.members if m.member_id == state.member_id), None)
-            if matching:
-                patient_name = f"{matching.first_name} {matching.last_name}"
-        if not patient_name:
-            patient_name = "Patient"
+        # Each patient gets a separate request under each policy. Combining
+        # family members in one clinical letter is unsafe and confusing.
+        requests: Dict[Tuple[str, str], dict] = {}
+        for policy in policies:
+            rules = {rule.cpt_code: rule for rule in policy.coverage_rules}
+            for claim_line in state.claim_lines:
+                rule = rules.get(claim_line.cpt_code)
+                if not rule or not rule.requires_preauth:
+                    continue
+                if not claim_line.member_id or not claim_line.patient_name:
+                    continue
+                if not self._line_is_eligible(state, claim_line.cpt_code, claim_line.member_id):
+                    continue
+                member = self._patient_on_policy(
+                    policy, claim_line.member_id, claim_line.patient_name
+                )
+                if not member:
+                    continue
+                key = (policy.policy_id, claim_line.patient_name)
+                request = requests.setdefault(
+                    key,
+                    {"policy": policy, "member": member, "patient_name": claim_line.patient_name, "lines": []},
+                )
+                request["lines"].append(claim_line)
 
         letters: List[PreAuthLetter] = []
-        policies = []
-        if state.primary_policy:
-            policies.append(state.primary_policy)
-        if state.secondary_policy:
-            policies.append(state.secondary_policy)
+        generated_at = datetime.utcnow().isoformat() + "Z"
+        generated_date = datetime.utcnow().strftime("%B %d, %Y")
 
-        date_generated = datetime.utcnow().strftime("%B %d, %Y")
-        timestamp_iso = datetime.utcnow().isoformat() + "Z"
+        for request in requests.values():
+            policy = request["policy"]
+            member = request["member"]
+            patient_name = request["patient_name"]
+            claim_lines = request["lines"]
 
-        # Build Diagnosis list
-        diagnoses_list = "*No active diagnosis codes resolved.*"
-        primary_diag_code = "N/A"
-        primary_diag_desc = "N/A"
-        
-        diagnoses = state.coding_result.diagnoses if state.coding_result else []
-        procedures = state.coding_result.procedures if state.coding_result else []
+            diagnoses = sorted({diagnosis for line in claim_lines for diagnosis in line.diagnoses})
+            source_documents = sorted({line.source_document for line in claim_lines if line.source_document})
 
-        if diagnoses:
-            diagnoses_list = "\n".join([f"*   **{d.code}:** {d.description}" for d in diagnoses])
-            primary_diag_code = diagnoses[0].code
-            primary_diag_desc = diagnoses[0].description
+            providers = []
+            for document_type, document in state.processed_documents.items():
+                facts = document.facts
+                if facts.patient_name and facts.patient_name.lower() == patient_name.lower():
+                    provider = facts.provider
+                    if provider.name or provider.npi or provider.facility:
+                        providers.append(provider)
+            provider = providers[0] if providers else None
+            provider_name = provider.name if provider and provider.name else "Not documented - clinician completion required"
+            provider_npi = provider.npi if provider and provider.npi else "Not documented - clinician completion required"
+            facility = provider.facility if provider and provider.facility else "Not documented - clinician completion required"
 
-        # Determine clinical findings narrative
-        clinical_findings = "The patient presents with clinical indications including joint pain, restricted range of motion, and functional impairment. Physical evaluations support the requested course of treatment."
-        if any(d.code.startswith("M23") for d in diagnoses):
-            clinical_findings = "MRI lower extremity joint demonstrates a tear of the medial meniscus, joint effusion, and structural ligament laxity. Conservative therapy failure is documented."
+            rows = []
+            for line in claim_lines:
+                description = procedure_descriptions.get(line.cpt_code, "Procedure documented in source")
+                rows.append(
+                    f"| `{line.cpt_code}` | {description} | INR {line.billed_amount:,.2f} | {line.source_document or 'Unknown'} |"
+                )
+            total = sum(line.billed_amount for line in claim_lines)
+            diagnoses_text = ", ".join(diagnoses) if diagnoses else "Not documented - clinician review required"
+            sources_text = ", ".join(source_documents) if source_documents else "No source document resolved"
 
-        for policy in policies:
-            # Resolve patient details on this policy
-            patient_member = next(
-                (m for m in policy.members if 
-                 m.first_name.lower() in patient_name.lower() or 
-                 patient_name.lower() in m.first_name.lower()), 
-                None
-            )
-            patient_dob = patient_member.date_of_birth if patient_member else "N/A"
-            member_id = patient_member.member_id if patient_member else "N/A"
+            content = f"""# PRIOR AUTHORIZATION REQUEST - DRAFT FOR CLINICIAN REVIEW
 
-            # Render procedure table rows
-            procedures_rows = []
-            total_billed = 0.0
+**Date:** {generated_date}
+**To:** Prior Authorization Department, {policy.provider_name}
 
-            # CPT Billed lookup map (mirroring the COB Engine estimate values in INR)
-            cpt_billed_map = {
-                "97161": 20000.00,
-                "97110": 10000.00,
-                "73721": 12000.00,
-                "29881": 100000.00,
-                "29888": 350000.00
-            }
+> This draft is generated from uploaded source documents. A licensed clinician must verify, complete, and sign it before submission.
 
-            for proc in procedures:
-                if not is_medically_necessary(proc.code):
-                    continue
-                cost = cpt_billed_map.get(proc.code, 500.00)
-                if state.cob_decision:
-                    for line in state.cob_decision.lines_coverage:
-                        if line.cpt_code == proc.code:
-                            cost = line.billed_amount
-                            break
-                total_billed += cost
+## Patient and policy
 
-                # Determine if pre-auth is required under this specific policy
-                requires_preauth = False
-                for rule in policy.coverage_rules:
-                    if rule.cpt_code == proc.code:
-                        requires_preauth = rule.requires_preauth
-                        break
+- **Patient:** {patient_name}
+- **Date of birth:** {member.date_of_birth}
+- **Member ID:** {member.member_id}
+- **Policy / plan:** {policy.policy_id}
+- **Group number:** {policy.group_number}
 
-                preauth_str = "YES (Required)" if requires_preauth else "No (Covered)"
-                procedures_rows.append(f"| `{proc.code}` | {proc.description} | ₹{cost:,.2f} | {preauth_str} |")
+## Requesting provider
 
-            procedures_table = "\n".join(procedures_rows) if procedures_rows else "| N/A | No procedures requested | ₹0.00 | - |"
+- **Provider:** {provider_name}
+- **NPI:** {provider_npi}
+- **Facility:** {facility}
 
-            # Render the Template
-            template = Template(LETTER_TEMPLATE)
-            letter_content = template.substitute(
-                date_generated=date_generated,
-                insurer_name=policy.provider_name,
-                patient_name=patient_name,
-                patient_dob=patient_dob,
-                member_id=member_id,
-                policy_id=policy.policy_id,
-                group_number=policy.group_number,
-                diagnoses_list=diagnoses_list,
-                procedures_rows=procedures_table,
-                total_billed=f"{total_billed:,.2f}",
-                clinical_findings=clinical_findings,
-                primary_diagnosis_code=primary_diag_code,
-                primary_diagnosis_desc=primary_diag_desc,
-            )
+## Procedures requiring authorization under this plan
 
+| CPT | Description | Source-grounded billed amount | Evidence source |
+| --- | --- | ---: | --- |
+{chr(10).join(rows)}
+
+**Total requested amount:** INR {total:,.2f}
+
+## Clinical evidence
+
+- **Documented diagnosis codes:** {diagnoses_text}
+- **Source documents reviewed:** {sources_text}
+- No symptoms, examination findings, failed therapies, or clinical conclusions have been added unless present in the uploaded evidence.
+
+## Clinician attestation
+
+I have reviewed this draft against the patient's medical record and attest that the requested services are medically necessary and accurately represented.
+
+**Clinician name:** ____________________
+**Signature:** ____________________
+**Date:** ____________________
+"""
             letters.append(
                 PreAuthLetter(
                     insurer_name=policy.provider_name,
                     policy_id=policy.policy_id,
                     patient_name=patient_name,
-                    letter_content=letter_content,
-                    generated_at=timestamp_iso,
+                    letter_content=content,
+                    generated_at=generated_at,
                 )
             )
 
-        return PreAuthResponse(
-            claim_id=state.claim_id,
-            letters=letters
-        )
+        logger.info("Generated %s source-grounded preauthorization draft(s)", len(letters))
+        return PreAuthResponse(claim_id=state.claim_id, letters=letters)

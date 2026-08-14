@@ -56,6 +56,7 @@ class SharedWorkflowState(BaseModel):
     """The shared mutable workflow state passed between coordinated agents."""
     claim_id: str = Field(..., description="Claim ID associated with the run")
     member_id: str = Field(..., description="Member ID of the patient")
+    member_ids: List[str] = Field(default_factory=list, description="All patient member IDs resolved in a family workflow")
     patient_name: Optional[str] = Field(None, description="Patient name if resolved")
     ocr_engine: str = Field("gemini", description="OCR engine choice: library | gemini")
     mock_mode: bool = Field(False, description="Whether to run in mock mode bypassing Gemini API calls")
@@ -196,18 +197,7 @@ class Orchestrator:
                 )
                 cob_agent = self.agents_dict.get("COBAgent")
                 if cob_agent:
-                    from app.schemas.cob_engine import Claim, ClaimLine
-                    from agents.cob import CPT_BILLED_AMOUNTS
-                    claim_lines = []
-                    for procedure in state.coding_result.procedures:
-                        billed_amount = CPT_BILLED_AMOUNTS.get(procedure.code, 500.00)
-                        claim_lines.append(ClaimLine(cpt_code=procedure.code, billed_amount=billed_amount))
-                    claim = Claim(
-                        claim_id=f"CLAIM-{state.claim_id}",
-                        member_id=state.member_id,
-                        lines=claim_lines
-                    )
-                    state.cob_decision = cob_agent.cob_engine.coordinate_benefits(claim)
+                    cob_agent.coordinate_state(state)
                 completed_agents.add("COBAgent")
             else:
                 return "COBAgent", "Insurance policies resolved. COBAgent is selected to evaluate Coordination of Benefits rules and assign primary/secondary payer order."

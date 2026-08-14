@@ -59,6 +59,24 @@
       "limitations": "Max 30 sessions per calendar year"
     },
     {
+      "cpt_code": "97140",
+      "is_covered": true,
+      "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
+      "limitations": "Manual therapy must be supported by the treatment record"
+    },
+    {
+      "cpt_code": "97112",
+      "is_covered": true,
+      "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
+      "limitations": "Neuromuscular re-education subject to therapy visit limits"
+    },
+    {
       "cpt_code": "73721",
       "is_covered": true,
       "requires_preauth": true,

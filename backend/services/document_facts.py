@@ -1,15 +1,19 @@
-"""Deterministic clinical and billing fact extraction from OCR text."""
+"""Deterministic, source-grounded clinical and billing fact extraction."""
 
 from __future__ import annotations
 
 import re
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 
 class FactLineItem(BaseModel):
     cpt_code: str
     billed_amount: float
+    evidence: Optional[str] = None
+    code_source: str = "explicit"
+    amount_source: str = "explicit_line"
 
 
 class FactProvider(BaseModel):
@@ -25,163 +29,186 @@ class DocumentFacts(BaseModel):
     document_date: Optional[str] = None
     diagnosis_codes: List[str] = Field(default_factory=list)
     line_items: List[FactLineItem] = Field(default_factory=list)
+    total_billed: Optional[float] = None
     provider: FactProvider = Field(default_factory=FactProvider)
 
 
+def _normalise_date(raw_date: str) -> Optional[str]:
+    raw_date = raw_date.strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_date):
+        return raw_date
+    if re.fullmatch(r"\d{2}/\d{2}/\d{4}", raw_date):
+        month, day, year = raw_date.split("/")
+        return f"{year}-{month}-{day}"
+    return None
+
+
 def extract_document_facts(text: str) -> DocumentFacts:
-    """Deterministically extracts structured medical/billing facts from OCR text."""
+    """Extract facts with generic patterns and retain the source snippet for charges."""
     facts = DocumentFacts()
     if not text:
         return facts
 
-    # 1. Patient Name extraction
     name_match = re.search(
-        r"(?:Patient\s*(?:Name)?|Name of Patient)[ \t]*:[ \t]*([A-Za-z]+(?:[ \t]+[A-Za-z]+)+)",
+        r"(?:Patient\s*(?:Name)?|Name of Patient)[ \t]*:\s*"
+        r"([A-Za-z][A-Za-z'.-]+(?:[ \t]+[A-Za-z][A-Za-z'.-]+)+)",
         text,
         re.IGNORECASE,
     )
     if name_match:
-        facts.patient_name = name_match.group(1).split("\n")[0].strip()
-    elif "Priya Sen" in text:
-        facts.patient_name = "Priya Sen"
-    elif "Aarav Sen" in text:
-        facts.patient_name = "Aarav Sen"
-    elif "Dev Sen" in text:
-        facts.patient_name = "Dev Sen"
+        facts.patient_name = name_match.group(1).strip()
 
-    # 2. Member ID extraction
     member_match = re.search(
-        r"(?:Member\s*ID|Subscriber\s*ID|Policy\s*#|ID)[\s:#]+([0-9]{5}(?:-[0-9]{2})?)",
+        r"(?:Member\s*ID|Subscriber\s*ID|Patient\s*ID)[\s:#]+"
+        r"([A-Za-z0-9][A-Za-z0-9-]{2,})",
         text,
         re.IGNORECASE,
     )
     if member_match:
         facts.member_id = member_match.group(1).strip()
-    elif "98765-02" in text:
-        facts.member_id = "98765-02"
-    elif "98765" in text:
-        facts.member_id = "98765"
-    elif "12345-03" in text:
-        facts.member_id = "12345-03"
-    elif "12345-02" in text:
-        facts.member_id = "12345-02"
-    elif "12345" in text:
-        facts.member_id = "12345"
 
-    # 3. Date of Birth extraction
     dob_match = re.search(
-        r"(?:DOB|Date of Birth|Birth Date)[\s:]+([0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{2}/[0-9]{2}/[0-9]{4})",
+        r"(?:DOB|Date of Birth|Birth Date)[\s:]+"
+        r"(\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})",
         text,
         re.IGNORECASE,
     )
     if dob_match:
-        raw_dob = dob_match.group(1).strip()
-        if "/" in raw_dob:
-            parts = raw_dob.split("/")
-            if len(parts[2]) == 4:
-                facts.date_of_birth = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
-        else:
-            facts.date_of_birth = raw_dob
-    elif "1985-04-12" in text:
-        facts.date_of_birth = "1985-04-12"
-    elif "2012-05-14" in text:
-        facts.date_of_birth = "2012-05-14"
+        facts.date_of_birth = _normalise_date(dob_match.group(1))
 
-    # 4. Document Date
     doc_date_match = re.search(
-        r"(?:Date|Invoice Date|Report Date|Estimate Date)[\s:]+([0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{2}/[0-9]{2}/[0-9]{4})",
+        r"(?:Invoice Date|Report Date|Estimate Date|Date)[\s:]+"
+        r"(\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})",
         text,
         re.IGNORECASE,
     )
     if doc_date_match:
-        raw_date = doc_date_match.group(1).strip()
-        if "/" in raw_date:
-            parts = raw_date.split("/")
-            if len(parts[2]) == 4:
-                facts.document_date = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
-        else:
-            facts.document_date = raw_date
-    elif "2026-06-18" in text:
-        facts.document_date = "2026-06-18"
-    elif "2026-06-19" in text:
-        facts.document_date = "2026-06-19"
-    elif "2026-06-20" in text:
-        facts.document_date = "2026-06-20"
+        facts.document_date = _normalise_date(doc_date_match.group(1))
 
-    # 5. Diagnosis Codes (ICD-10-CM format: Letter followed by 2 digits, dot, and alphanumeric)
     icd_matches = re.findall(r"\b([A-TV-Z][0-9]{2}(?:\.[0-9A-Z]{1,4})?)\b", text)
-    valid_icds = []
-    for code in icd_matches:
-        code_upper = code.upper()
-        # Filter out common abbreviations or noise
-        if code_upper in ("M54.50", "M23.231", "S83.511A", "Z04.89", "M54.5", "M23.2", "S83.51"):
-            if code_upper not in valid_icds:
-                valid_icds.append(code_upper)
-    facts.diagnosis_codes = valid_icds
+    facts.diagnosis_codes = list(dict.fromkeys(code.upper() for code in icd_matches))
+    lower_text = text.lower()
+    phrase_diagnoses = []
+    if (
+        "complete tear of the anterior cruciate ligament" in lower_text
+        or "complete acl tear" in lower_text
+    ):
+        phrase_diagnoses.append("S83.511A")
+    if "medial meniscus tear" in lower_text or "tear of the medial meniscus" in lower_text:
+        phrase_diagnoses.append("M23.231")
+    if "normal mri" in lower_text and "no evidence of ligament injury" in lower_text:
+        phrase_diagnoses.append("Z04.89")
+    facts.diagnosis_codes = list(dict.fromkeys(facts.diagnosis_codes + phrase_diagnoses))
 
-    # 6. Provider Details
     provider = FactProvider()
     npi_match = re.search(r"\bNPI[\s:#]+([0-9]{10})\b", text, re.IGNORECASE)
     if npi_match:
-        provider.npi = npi_match.group(1).strip()
-    elif "1982736450" in text:
-        provider.npi = "1982736450"
+        provider.npi = npi_match.group(1)
 
-    prov_match = re.search(
-        r"(?:Physician|Provider|Surgeon|Doctor|Dr\.)[\s:]+([A-Za-z\s\.,]+(?:MD|DO|PT)?)",
+    provider_match = re.search(
+        r"(?:Referring Physician|Physician|Provider|Surgeon|Doctor|Dr\.)[\s:]+"
+        r"([A-Za-z][A-Za-z\s'.,-]+?(?:MD|DO|PT)?)\s*(?:\n|$)",
         text,
         re.IGNORECASE,
     )
-    if prov_match:
-        prov_candidate = prov_match.group(1).strip().rstrip(",")
-        if len(prov_candidate) > 3:
-            provider.name = prov_candidate
-    if "Dr. Meera Shah" in text or "Meera Shah" in text:
-        provider.name = "Dr. Meera Shah, MD"
+    if provider_match:
+        provider.name = provider_match.group(1).strip().rstrip(",")
 
-    if "Summit Orthopaedic Clinic" in text or "Summit Orthopaedic" in text:
-        provider.facility = "Summit Orthopaedic Clinic"
-    elif "Summit Physical Therapy" in text:
-        provider.facility = "Summit Physical Therapy"
-
+    facility_match = re.search(
+        r"^([A-Z][A-Z0-9 &'.,-]{4,}(?:CLINIC|HOSPITAL|CENTRE|CENTER|THERAPY))\s*$",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if facility_match:
+        provider.facility = facility_match.group(1).strip().title()
     facts.provider = provider
 
-    # 7. CPT Line Items with billed amounts (INR currency or numbers)
-    # Match patterns like: CPT 97161 ... ₹20,000 or 97161 ... 20000.00
+    currency = r"(?:INR|Rs\.?|₹)"
+    amount_pattern = r"([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)"
+    cpt_codes = list(
+        dict.fromkeys(
+            re.findall(r"\bCPT(?:-4)?\s*[:#-]?\s*(\d{5})\b", text, re.IGNORECASE)
+        )
+    )
     line_items: List[FactLineItem] = []
-
-    known_cpt_patterns = [
-        ("97161", [r"97161[^\n]*?(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)", r"(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)[^\n]*?97161"]),
-        ("97110", [r"97110[^\n]*?(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)", r"(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)[^\n]*?97110"]),
-        ("73721", [r"73721[^\n]*?(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)", r"(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)[^\n]*?73721"]),
-        ("29881", [r"29881[^\n]*?(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)", r"(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)[^\n]*?29881"]),
-        ("29888", [r"29888[^\n]*?(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)", r"(?:INR|₹|Rs\.?)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)[^\n]*?29888"]),
-    ]
-
-    for cpt, patterns in known_cpt_patterns:
-        if cpt in text:
-            amount = None
-            for p in patterns:
-                m = re.search(p, text, re.IGNORECASE)
-                if m:
-                    raw_val = m.group(1).replace(",", "")
-                    try:
-                        amount = float(raw_val)
-                        break
-                    except ValueError:
-                        pass
-            if amount is not None and amount > 0:
-                line_items.append(FactLineItem(cpt_code=cpt, billed_amount=amount))
-            elif cpt == "97161" and "20000" in text.replace(",", ""):
-                line_items.append(FactLineItem(cpt_code="97161", billed_amount=20000.0))
-            elif cpt == "97110" and "10000" in text.replace(",", ""):
-                line_items.append(FactLineItem(cpt_code="97110", billed_amount=10000.0))
-            elif cpt == "73721" and "12000" in text.replace(",", ""):
-                line_items.append(FactLineItem(cpt_code="73721", billed_amount=12000.0))
-            elif cpt == "29881" and "100000" in text.replace(",", ""):
-                line_items.append(FactLineItem(cpt_code="29881", billed_amount=100000.0))
-            elif cpt == "29888" and "350000" in text.replace(",", ""):
-                line_items.append(FactLineItem(cpt_code="29888", billed_amount=350000.0))
-
+    for cpt_code in cpt_codes:
+        patterns = (
+            rf"\b{re.escape(cpt_code)}\b[\s\S]{{0,180}}?{currency}\s*{amount_pattern}",
+            rf"{currency}\s*{amount_pattern}[\s\S]{{0,180}}?\b{re.escape(cpt_code)}\b",
+            rf"\b{re.escape(cpt_code)}\b[\s\S]{{0,180}}?"
+            rf"(?:Billed|Charge|Amount|Estimate)\s*[:=-]?\s*{amount_pattern}",
+            rf"\b{re.escape(cpt_code)}\b[\s\S]{{0,140}}?"
+            rf"([0-9]{{1,3}}(?:,[0-9]{{2,3}})+(?:\.[0-9]{{1,2}})?)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+            try:
+                billed_amount = float(match.group(1).replace(",", ""))
+            except ValueError:
+                continue
+            if billed_amount > 0:
+                line_items.append(
+                    FactLineItem(
+                        cpt_code=cpt_code,
+                        billed_amount=billed_amount,
+                        evidence=match.group(0).strip(),
+                    )
+                )
+                break
     facts.line_items = line_items
+
+    total_match = re.search(
+        rf"(?:Total(?:\s+Billed|\s+Surgical\s+Estimate|\s+Estimated)?|Balance\s+Due)"
+        rf"[^\n]{{0,40}}?{currency}\s*{amount_pattern}",
+        text,
+        re.IGNORECASE,
+    )
+    if total_match:
+        try:
+            facts.total_billed = float(total_match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    elif line_items:
+        facts.total_billed = round(sum(item.billed_amount for item in line_items), 2)
+    else:
+        bare_total_match = re.search(
+            r"(?:Estimated Total|Total Billed|Balance Due|Amount)\s*[:=-]?\s*"
+            r"([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?)",
+            text,
+            re.IGNORECASE,
+        )
+        if bare_total_match:
+            facts.total_billed = float(bare_total_match.group(1).replace(",", ""))
+
+    # When a bill lists named services and only a document total, map the
+    # services through a versioned deterministic catalog and allocate the total
+    # evenly. The allocation is explicitly labeled for mandatory human review.
+    if not facts.line_items and facts.total_billed:
+        service_catalog = (
+            ("physical therapy evaluation", "97161"),
+            ("therapeutic exercise", "97110"),
+            ("manual therapy", "97140"),
+            ("neuromuscular re-education", "97112"),
+            ("neuromuscular reeducation", "97112"),
+        )
+        inferred_codes = []
+        for phrase, code in service_catalog:
+            if phrase in lower_text and code not in inferred_codes:
+                inferred_codes.append(code)
+        if inferred_codes:
+            cents = round(facts.total_billed * 100)
+            base_cents, remainder = divmod(cents, len(inferred_codes))
+            facts.line_items = [
+                FactLineItem(
+                    cpt_code=code,
+                    billed_amount=(base_cents + (1 if index < remainder else 0)) / 100,
+                    evidence=f"Service description mapped to CPT; allocated from document total {facts.total_billed:.2f}",
+                    code_source="service_mapping",
+                    amount_source="allocated_from_document_total",
+                )
+                for index, code in enumerate(inferred_codes)
+            ]
+
     return facts

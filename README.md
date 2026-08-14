@@ -8,8 +8,8 @@ DuCO-Agent is a high-fidelity, multi-agent AI system designed to coordinate medi
 
 DuCO-Agent is designed around a **clean separation of concerns**:
 *   **Dynamic Agentic Planner**: Instead of a predefined static sequence, the orchestrator acts as a dynamic planner that inspects the live `SharedWorkflowState` and conditionally routes/backtracks to different specialist agents.
-*   **Specialist Agents (Orchestration)**: Powered by the Google ADK and Gemini, these agents handle execution sequencing, input validation, audits, and pipeline logging under the planner's direction.
-*   **Core Services (Business Logic)**: Standalone Python engines that implement strict healthcare rules (COB coordination order, CPT coverage checks, deductible accounting, and financial ledger breakdowns). Agents invoke these services but do not embed business rules inside their LLM prompts, ensuring reliable and auditable calculations.
+*   **Specialist Agents (Orchestration)**: Typed asynchronous Python agents handle execution, validation, audits, and trace logging under the planner's direction. Gemini is used only for OCR/coding/reviewer inference when explicitly configured.
+*   **Core Services (Business Logic)**: Standalone Python engines implement COB order, CPT coverage, medical-necessity checks, per-member deductible/OOP accumulators, INR rounding, and financial conservation checks. LLM output never supplies payment calculations.
 *   **Shared Workflow State**: A unified transaction registry (`SharedWorkflowState`) that tracks variables and accumulates parsed results as the pipeline moves from Intake to Final Review.
 
 ### System Architecture Diagram
@@ -93,7 +93,7 @@ The Multi-Agent framework orchestrates seven specialist agents:
 
 *   **Frontend**: React (v19), TypeScript, TailwindCSS (v4), React Router, Axios, and Vite.
 *   **Backend**: Python (v3.10), FastAPI, Pydantic (Type validation), PyPDF (PDF metadata & parsing).
-*   **AI & Reasoning**: Google Generative AI (Gemini 1.5 Flash) via structured JSON schema instructions.
+*   **AI & Reasoning**: Google Gemini 2.5 Flash via structured JSON schemas for optional OCR, coding inference, and reviewer assistance.
 
 ---
 
@@ -219,7 +219,7 @@ sequenceDiagram
     ```bash
     pip install -r requirements.txt
     ```
-4.  *(Optional)* Set the Gemini API key environment variable for live LLM extractions. If omitted, the system activates local high-fidelity simulated parsing rules:
+4.  *(Optional)* Set the Gemini API key for inference when a document does not explicitly contain clinical codes. Without a key, explicit codes are processed deterministically and inference-only inputs fail closed; mock substitution is available only through the explicitly selected Demo mode:
     ```bash
     # Windows Powershell
     $env:GEMINI_API_KEY="your-api-key"
@@ -257,9 +257,24 @@ sequenceDiagram
 *   **Birthday Rule**: Claims for dependents (e.g. Aarav Sen) prioritize the primary insurer based on whichever parent's birthday falls earlier in the calendar year.
 *   **Pace**: Conversational reading pace is estimated at 140 WPM to compute narration durations.
 
-### Limitations
-*   **Scanned PDFs**: If a PDF document does not contain extractable text characters, the system defaults to Gemini Vision API OCR. Without aconfigured API Key, it uses the assessment mock texts.
-*   **TTS Integration**: The Patient Audio Briefing generates structured text sections optimized for text-to-speech engine ingestion. Synthetic audio files are represented by a mockup player card.
+### Grounding and safety behavior
+*   **Patient-specific claims**: Documents are grouped by resolved patient identity. Priya's services and Aarav's services are adjudicated as separate claims with their own payer order and accumulators, then aggregated for the family dashboard.
+*   **No invented prices**: Claim lines must carry an amount extracted from a source document. Total-only invoices may use a labeled deterministic allocation that forces clinician approval; otherwise the workflow stops instead of using a fixed CPT price.
+*   **Scanned documents**: Image and scanned-PDF OCR support both RapidOCR and Gemini Vision. Real PNG/PDF fixtures and local OCR integration tests are included under `backend/sample_inputs`.
+*   **Approval gate**: Reports, PDFs, and downloadable audio remain unavailable while reviewer findings await clinician approval. Rejection preserves the existing evidence, trace, and feedback for the correction pass.
+*   **Artifacts**: Prior-authorization letters are clinician-review drafts containing only procedures requiring authorization for that patient and plan. Missing provider fields remain visibly incomplete rather than being fabricated.
+*   **Audio**: The browser can read the grounded narration through the Web Speech API. MP3 generation fails explicitly if the configured speech service is unavailable; it never returns fake silence.
+
+### Verification
+
+```bash
+cd backend
+python -m pytest -q
+
+cd ../frontend
+npx tsc -b --noEmit
+npm run lint
+```
 
 ---
 

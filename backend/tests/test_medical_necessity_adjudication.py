@@ -183,5 +183,5 @@ def test_audio_briefing_explains_necessity_denial():
     
     # Financial summary text should contain explanation that the ACL reconstruction is not insurable because diagnostic report shows no ACL injury
     fin_section = next(sec for sec in res.briefing.sections if sec.title == "Financial Summary")
-    assert "ACL reconstruction procedure is not insurable" in fin_section.text
+    assert "procedure 29888 requires clinical review" in fin_section.text
     assert "shows no ACL injury" in fin_section.text

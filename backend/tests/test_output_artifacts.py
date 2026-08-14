@@ -3,7 +3,9 @@ from unittest.mock import MagicMock
 from app.core.adk import SharedWorkflowState, Orchestrator, Agent, TraceEntry
 from app.schemas.medical_coding import CodingResult, Diagnosis, Procedure
 from app.schemas.insurance_engine import InsurancePolicy, Member, CoverageRule, Deductible, Coinsurance
-from app.schemas.cob_engine import ClaimLine, COBDecision
+from app.schemas.cob_engine import Claim, ClaimLine, COBDecision
+from services.cob_engine import COBEngine
+from services.insurance_engine import InsuranceService
 from services.preauth import PreAuthorizationService
 from services.audio import AudioBriefingService
 from app.api.v1.endpoints.reports import generate_letter_pdf
@@ -85,7 +87,14 @@ def test_preauth_letter_generation_structure():
         diagnoses=[Diagnosis(code="M23.231", description="Meniscus tear", confidence=0.99)],
         procedures=[Procedure(code="29881", description="Meniscectomy", confidence=0.99)],
     )
-    state.claim_lines = [ClaimLine(cpt_code="29881", billed_amount=100000.0)]
+    state.claim_lines = [ClaimLine(
+        cpt_code="29881",
+        billed_amount=100000.0,
+        member_id="98765-02",
+        patient_name="Aarav Sen",
+        diagnoses=["M23.231"],
+        source_document="surgeon_estimate",
+    )]
     state.primary_policy = InsurancePolicy(
         policy_id="BS-120-BLUE",
         provider_name="BlueShield Cross",
@@ -96,6 +105,19 @@ def test_preauth_letter_generation_structure():
         remaining_out_of_pocket_max=120000.0,
         members=[Member(member_id="98765-02", first_name="Aarav", last_name="Sen", role="dependent", relationship_to_subscriber="child", date_of_birth="2012-05-14")],
         coverage_rules=[CoverageRule(cpt_code="29881", is_covered=True, requires_preauth=True)],
+    )
+    insurance = InsuranceService()
+    insurance._policies.clear()
+    insurance._member_accumulators.clear()
+    insurance._family_deductibles.clear()
+    insurance._policies[state.primary_policy.policy_id] = state.primary_policy
+    state.cob_decision = COBEngine(insurance).coordinate_benefits(
+        Claim(
+            claim_id=state.claim_id,
+            member_id=state.member_id,
+            lines=state.claim_lines,
+            diagnoses=["M23.231"],
+        )
     )
 
     service = PreAuthorizationService()

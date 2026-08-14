@@ -105,9 +105,15 @@ async def test_end_to_end_orchestration_pipeline(mock_client_class, tmp_path):
 
     # Write mock files on disk to pass Path.exists() check
     invoice_path = tmp_path / "invoice.txt"
-    invoice_path.write_text("Patient Name: Priya Sen\nProcedure code is 97161. Total PT Evaluation.")
+    invoice_path.write_text(
+        "Patient Name: Priya Sen\nMember ID: 98765\nDOB: 1985-04-12\n"
+        "Diagnosis M54.50\nCPT 97161 PT Evaluation - INR 20000.00"
+    )
     transcript_path = tmp_path / "transcript.txt"
-    transcript_path.write_text("Patient Name: Priya Sen\nSubscriber is Priya Sen under BS-120-BLUE.")
+    transcript_path.write_text(
+        "Patient Name: Priya Sen\nSubscriber ID: 98765\nDOB: 1985-04-12\n"
+        "Subscriber is Priya Sen under BS-120-BLUE."
+    )
 
     # Setup fresh service instances
     storage_service = LocalStorageService()

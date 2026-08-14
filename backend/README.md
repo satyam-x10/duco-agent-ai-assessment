@@ -1,6 +1,6 @@
 # DuCO-Agent: Backend Orchestrator
 
-The backend component of DuCO-Agent exposes REST APIs using FastAPI and hosts multi-agent workflows using the Google Agent Development Kit (ADK) and Gemini models.
+The backend component exposes FastAPI endpoints and a typed asynchronous multi-agent workflow. Gemini is an optional inference dependency; deterministic extraction and payment logic remain ordinary testable Python services.
 
 ## Folder Structure
 

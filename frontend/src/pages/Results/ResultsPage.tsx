@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { PageContainer } from '../../components/layout/PageContainer';
 import { ApiService } from '../../services/api';
@@ -343,7 +343,7 @@ export const ResultsPage: React.FC = () => {
     };
   }, []);
 
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     if (!jobId) {
       setError('No job ID provided. Please run an analysis first from the Intake Workspace.');
       setLoading(false);
@@ -373,7 +373,7 @@ export const ResultsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [jobId]);
 
   const handleApprove = async () => {
     if (!jobId) return;
@@ -406,7 +406,7 @@ export const ResultsPage: React.FC = () => {
 
   useEffect(() => {
     fetchReport();
-  }, [jobId]);
+  }, [fetchReport]);
 
   if (loading) {
     return (
@@ -578,6 +578,29 @@ export const ResultsPage: React.FC = () => {
                 </p>
               </div>
             </div>
+            {report.patient_claims?.length > 1 && (
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">Patient-specific claims</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {report.patient_claims.map((claim: any) => (
+                    <div key={claim.member_id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-extrabold text-slate-800">{claim.patient_name}</p>
+                          <p className="text-[10px] text-slate-500">Member {claim.member_id}</p>
+                        </div>
+                        <p className="text-sm font-extrabold text-amber-800">
+                          ₹{claim.total_patient_responsibility.toFixed(2)} due
+                        </p>
+                      </div>
+                      <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                        Billed ₹{claim.total_billed.toFixed(2)} · Primary {claim.primary_policy_id || 'unresolved'} · Secondary {claim.secondary_policy_id || 'none'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Per-Procedure Coverage Decision Breakdown */}
@@ -615,7 +638,7 @@ export const ResultsPage: React.FC = () => {
                   return (
                     <div key={idx} className={`rounded-xl border ${borderColor} ${bgColor} p-4 transition-all hover:shadow-sm`}>
                       {/* Header row */}
-                      <div className="flex items-center justify-between mb-3">
+                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-300/50 font-mono shrink-0">
                             {line.cpt_code}
@@ -629,8 +652,22 @@ export const ResultsPage: React.FC = () => {
                             {statusIcon} {statusText}
                           </span>
                         </div>
-                        <span className="text-sm font-extrabold text-slate-800">{currSym}{line.billed_amount.toFixed(2)}</span>
-                      </div>
+                         <span className="text-sm font-extrabold text-slate-800">{currSym}{line.billed_amount.toFixed(2)}</span>
+                       </div>
+                       {(line.patient_name || line.source_document) && (
+                         <div className="mb-3 flex flex-wrap gap-2 text-[10px] font-semibold text-slate-500">
+                           {line.patient_name && (
+                             <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
+                               Patient: {line.patient_name}{line.member_id ? ` (${line.member_id})` : ''}
+                             </span>
+                           )}
+                           {line.source_document && (
+                             <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
+                               Charge source: {line.source_document.replaceAll('_', ' ')}
+                             </span>
+                           )}
+                         </div>
+                       )}
                       
                       {/* Payment details grid */}
                       <div className="grid grid-cols-3 gap-3 text-xs">
@@ -725,8 +762,8 @@ export const ResultsPage: React.FC = () => {
               primaryPaid={report.financial_summary.primary_paid}
               secondaryPaid={report.financial_summary.secondary_paid}
               patientOwes={report.financial_summary.patient_responsibility}
-              primaryInsurer={report.preauth_letters[0]?.insurer_name || 'BlueShield Cross'}
-              secondaryInsurer={report.preauth_letters[1]?.insurer_name || 'UnitedHealth'}
+              primaryInsurer={report.financial_summary.primary_provider || 'Primary insurer'}
+              secondaryInsurer={report.financial_summary.secondary_provider || ''}
               currencySymbol={report.financial_summary.currency === 'INR' ? '₹' : '$'}
             />
           </div>

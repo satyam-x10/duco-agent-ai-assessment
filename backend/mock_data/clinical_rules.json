@@ -12,6 +12,16 @@
       "category": "physical_therapy",
       "supporting_diagnosis_prefixes": ["M54", "M25", "S83", "M23"]
     },
+    "97140": {
+      "description": "Manual therapy techniques",
+      "category": "physical_therapy",
+      "supporting_diagnosis_prefixes": ["M54", "M25", "S83", "M23"]
+    },
+    "97112": {
+      "description": "Neuromuscular re-education",
+      "category": "physical_therapy",
+      "supporting_diagnosis_prefixes": ["M54", "M25", "S83", "M23"]
+    },
     "73721": {
       "description": "MRI lower extremity joint without contrast",
       "category": "diagnostic_imaging",

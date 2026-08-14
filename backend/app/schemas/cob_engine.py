@@ -6,6 +6,12 @@ class ClaimLine(BaseModel):
     """A single procedure line item in a medical claim."""
     cpt_code: str = Field(..., description="The CPT procedure code (e.g., 97161)")
     billed_amount: float = Field(..., description="The original billed charge for this procedure")
+    member_id: Optional[str] = Field(None, description="Member receiving the service")
+    patient_name: Optional[str] = Field(None, description="Patient receiving the service")
+    diagnoses: List[str] = Field(default_factory=list, description="Diagnoses supporting this line")
+    source_document: Optional[str] = Field(None, description="Document slot that supplied the charge")
+    source_evidence: Optional[str] = Field(None, description="Extracted source snippet supporting the charge")
+    amount_source: str = Field("explicit_line", description="How the line amount was obtained")
 
 
 class Claim(BaseModel):
@@ -56,9 +62,24 @@ class ClaimLineCoverage(BaseModel):
     """Adjudication details for a single claim line under dual-coverage rules."""
     cpt_code: str = Field(..., description="CPT procedure code")
     billed_amount: float = Field(..., description="Billed charge")
+    member_id: Optional[str] = Field(None, description="Member adjudicated on this line")
+    patient_name: Optional[str] = Field(None, description="Patient adjudicated on this line")
+    source_document: Optional[str] = Field(None, description="Source document for the billed amount")
     primary_coverage: PrimaryCoverage = Field(..., description="Adjudication details under the primary policy")
     secondary_coverage: SecondaryCoverage = Field(..., description="Coordination details under the secondary policy")
     remaining_balance: RemainingBalance = Field(..., description="Final summary balance representation")
+
+
+class PatientClaimSummary(BaseModel):
+    """Patient-specific totals retained when a family workflow contains multiple claims."""
+    member_id: str
+    patient_name: str
+    primary_policy_id: Optional[str] = None
+    secondary_policy_id: Optional[str] = None
+    total_billed: float
+    total_primary_paid: float
+    total_secondary_paid: float
+    total_patient_responsibility: float
 
 
 class COBDecision(BaseModel):
@@ -70,6 +91,7 @@ class COBDecision(BaseModel):
     secondary_policy_id: Optional[str] = Field(None, description="Resolved secondary policy ID")
     secondary_provider: Optional[str] = Field(None, description="Resolved secondary provider name")
     lines_coverage: List[ClaimLineCoverage] = Field(default_factory=list, description="Calculated line item breakdowns")
+    patient_claims: List[PatientClaimSummary] = Field(default_factory=list, description="Per-patient claim summaries")
     total_billed: float = Field(..., description="Sum of original billed amounts")
     total_primary_paid: float = Field(..., description="Sum of payments by primary")
     total_secondary_paid: float = Field(..., description="Sum of payments by secondary")

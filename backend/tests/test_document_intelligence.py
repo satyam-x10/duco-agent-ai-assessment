@@ -32,7 +32,8 @@ async def test_text_processor():
         processed = await processor.process(tmp_path, DocumentType.USER_QUERY_TRANSCRIPT)
         assert processed.extracted_text == "Priya Patel transcript query content"
         assert processed.page_count == 1
-        assert processed.confidence == 1.0
+        assert processed.confidence == pytest.approx(0.90)
+        assert "Patient name could not be resolved from text." in processed.quality_issues
         assert processed.metadata["parser"] == "TextProcessor"
     finally:
         if tmp_path.exists():
@@ -56,7 +57,7 @@ async def test_pdf_processor_with_extractable_text(mock_pdf_reader):
         
         assert "Peak Physical Therapy" in processed.extracted_text
         assert processed.page_count == 1
-        assert processed.confidence == 0.99
+        assert processed.confidence == pytest.approx(0.80)
         assert processed.metadata["parser"] == "PDFProcessor"
     finally:
         if tmp_path.exists():
@@ -89,7 +90,7 @@ async def test_pdf_processor_scanned_fallback(mock_client_class, mock_pdf_reader
         processed = await processor.process(tmp_path, DocumentType.PRIYA_PT_INVOICE)
         
         assert processed.extracted_text == "Scanned PDF extracted content via Gemini OCR"
-        assert processed.confidence == 0.90
+        assert processed.confidence == pytest.approx(0.80)
         assert processed.metadata["parser"] == "PDFProcessor (Gemini OCR)"
     finally:
         if tmp_path.exists():
@@ -117,7 +118,7 @@ async def test_image_processor_gemini(mock_client_class, monkeypatch):
         processed = await processor.process(tmp_path, DocumentType.AARAV_MRI_REPORT)
         
         assert "radiology report findings" in processed.extracted_text
-        assert processed.confidence == 0.98
+        assert processed.confidence == pytest.approx(0.90)
         assert processed.metadata["ocr_method"] == "GeminiVisionOCR"
     finally:
         if tmp_path.exists():

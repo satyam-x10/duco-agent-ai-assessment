@@ -1,0 +1,200 @@
+{
+  "claim_id": "CLAIM-AARAV-01",
+  "patient_name": "Aarav Sen",
+  "primary_policy": "BS-120-BLUE",
+  "secondary_policy": "UH-990-GOLD",
+  "cob_decision": {
+    "claim_id": "CLAIM-AARAV-01",
+    "patient_name": "Aarav Sen",
+    "primary_policy_id": "BS-120-BLUE",
+    "primary_provider": "BlueShield Cross",
+    "secondary_policy_id": "UH-990-GOLD",
+    "secondary_provider": "UnitedHealth",
+    "lines_coverage": [
+      {
+        "cpt_code": "73721",
+        "billed_amount": 12000.0,
+        "member_id": "98765-02",
+        "patient_name": "Aarav Sen",
+        "source_document": "aarav_mri_report.pdf",
+        "primary_coverage": {
+          "policy_id": "BS-120-BLUE",
+          "is_covered": true,
+          "allowed_amount": null,
+          "contractual_writeoff": 0.0,
+          "copay_applied": 0.0,
+          "deductible_applied": 12000.0,
+          "coinsurance_rate": 0.2,
+          "coinsurance_amount": 0.0,
+          "primary_paid": 0.0,
+          "patient_responsibility": 12000.0
+        },
+        "secondary_coverage": {
+          "policy_id": "UH-990-GOLD",
+          "is_covered": true,
+          "allowed_amount": 12000.0,
+          "copay_applied": 0.0,
+          "deductible_applied": 10000.0,
+          "coinsurance_rate": 0.1,
+          "coinsurance_amount": 0.0,
+          "secondary_paid": 1800.0,
+          "patient_responsibility": 10200.0
+        },
+        "remaining_balance": {
+          "billed_amount": 12000.0,
+          "primary_paid": 0.0,
+          "secondary_paid": 1800.0,
+          "patient_responsibility": 10200.0,
+          "notes": "Patient: Aarav Sen. Primary paid \u20b90.00. Secondary coordinated and paid \u20b91800.00 (deductible credited: \u20b910000.00).",
+          "is_satisfied": true
+        }
+      },
+      {
+        "cpt_code": "29881",
+        "billed_amount": 100000.0,
+        "member_id": "98765-02",
+        "patient_name": "Aarav Sen",
+        "source_document": "aarav_surgeon_estimate.png",
+        "primary_coverage": {
+          "policy_id": "BS-120-BLUE",
+          "is_covered": true,
+          "allowed_amount": null,
+          "contractual_writeoff": 0.0,
+          "copay_applied": 0.0,
+          "deductible_applied": 8000.0,
+          "coinsurance_rate": 0.2,
+          "coinsurance_amount": 18400.0,
+          "primary_paid": 73600.0,
+          "patient_responsibility": 26400.0
+        },
+        "secondary_coverage": {
+          "policy_id": "UH-990-GOLD",
+          "is_covered": true,
+          "allowed_amount": 100000.0,
+          "copay_applied": 0.0,
+          "deductible_applied": 0.0,
+          "coinsurance_rate": 0.1,
+          "coinsurance_amount": 0.0,
+          "secondary_paid": 26400.0,
+          "patient_responsibility": 0.0
+        },
+        "remaining_balance": {
+          "billed_amount": 100000.0,
+          "primary_paid": 73600.0,
+          "secondary_paid": 26400.0,
+          "patient_responsibility": 0.0,
+          "notes": "Patient: Aarav Sen. Primary paid \u20b973600.00. Secondary coordinated and paid \u20b926400.00 (deductible credited: \u20b90.00).",
+          "is_satisfied": true
+        }
+      }
+    ],
+    "total_billed": 112000.0,
+    "total_primary_paid": 73600.0,
+    "total_secondary_paid": 28200.0,
+    "total_patient_responsibility": 10200.0,
+    "patient_claims": [
+      {
+        "member_id": "98765-02",
+        "patient_name": "Aarav Sen",
+        "primary_policy_id": "BS-120-BLUE",
+        "secondary_policy_id": "UH-990-GOLD",
+        "total_billed": 112000.0,
+        "total_primary_paid": 73600.0,
+        "total_secondary_paid": 28200.0,
+        "total_patient_responsibility": 10200.0
+      }
+    ],
+    "is_fully_adjudicated": true
+  },
+  "financial_breakdown": {
+    "report_id": "FIN-REPORT-57CE0DAE",
+    "claim_id": "CLAIM-AARAV-01",
+    "patient_name": "Aarav Sen",
+    "generated_at": "2026-08-14T10:06:08.385969Z",
+    "primary_policy_id": "BS-120-BLUE",
+    "secondary_policy_id": "UH-990-GOLD",
+    "breakdown": {
+      "allocations": [
+        {
+          "cpt_code": "73721",
+          "billed_amount": 12000.0,
+          "primary_paid": 0.0,
+          "secondary_paid": 1800.0,
+          "patient_deductible_applied": 10200.0,
+          "patient_coinsurance_applied": 0.0,
+          "patient_responsibility": 10200.0
+        },
+        {
+          "cpt_code": "29881",
+          "billed_amount": 100000.0,
+          "primary_paid": 73600.0,
+          "secondary_paid": 26400.0,
+          "patient_deductible_applied": 0.0,
+          "patient_coinsurance_applied": 0.0,
+          "patient_responsibility": 0.0
+        }
+      ],
+      "patient_responsibility": {
+        "total_deductible": 10200.0,
+        "total_coinsurance": 0.0,
+        "total_responsibility": 10200.0,
+        "explanation_notes": "The total billed amount of \u20b9112000.00 was coordinated across dual coverage. BlueShield Cross paid \u20b973600.00. UnitedHealth coordinated and paid \u20b928200.00. The patient out-of-pocket responsibility is \u20b910200.00, comprising \u20b910200.00 towards deductibles and \u20b90.00 towards coinsurance."
+      },
+      "summary": {
+        "total_billed": 112000.0,
+        "total_primary_paid": 73600.0,
+        "total_secondary_paid": 28200.0,
+        "total_insurer_paid": 101800.0,
+        "total_patient_responsibility": 10200.0,
+        "total_savings": 101800.0
+      }
+    }
+  },
+  "preauth_letters": [
+    {
+      "insurer_name": "BlueShield Cross",
+      "policy_id": "BS-120-BLUE",
+      "patient_name": "Aarav Sen",
+      "letter_content": "# PRIOR AUTHORIZATION REQUEST - DRAFT FOR CLINICIAN REVIEW\n\n**Date:** August 14, 2026\n**To:** Prior Authorization Department, BlueShield Cross\n\n> This draft is generated from uploaded source documents. A licensed clinician must verify, complete, and sign it before submission.\n\n## Patient and policy\n\n- **Patient:** Aarav Sen\n- **Date of birth:** 2012-05-14\n- **Member ID:** 98765-02\n- **Policy / plan:** BS-120-BLUE\n- **Group number:** BS120\n\n## Requesting provider\n\n- **Provider:** Not documented - clinician completion required\n- **NPI:** Not documented - clinician completion required\n- **Facility:** Not documented - clinician completion required\n\n## Procedures requiring authorization under this plan\n\n| CPT | Description | Source-grounded billed amount | Evidence source |\n| --- | --- | ---: | --- |\n| `29881` | Arthroscopic meniscectomy | INR 100,000.00 | aarav_surgeon_estimate.png |\n\n**Total requested amount:** INR 100,000.00\n\n## Clinical evidence\n\n- **Documented diagnosis codes:** M23.231\n- **Source documents reviewed:** aarav_surgeon_estimate.png\n- No symptoms, examination findings, failed therapies, or clinical conclusions have been added unless present in the uploaded evidence.\n\n## Clinician attestation\n\nI have reviewed this draft against the patient's medical record and attest that the requested services are medically necessary and accurately represented.\n\n**Clinician name:** ____________________\n**Signature:** ____________________\n**Date:** ____________________\n",
+      "generated_at": "2026-08-14T10:06:08.385969Z"
+    },
+    {
+      "insurer_name": "UnitedHealth",
+      "policy_id": "UH-990-GOLD",
+      "patient_name": "Aarav Sen",
+      "letter_content": "# PRIOR AUTHORIZATION REQUEST - DRAFT FOR CLINICIAN REVIEW\n\n**Date:** August 14, 2026\n**To:** Prior Authorization Department, UnitedHealth\n\n> This draft is generated from uploaded source documents. A licensed clinician must verify, complete, and sign it before submission.\n\n## Patient and policy\n\n- **Patient:** Aarav Sen\n- **Date of birth:** 2012-05-14\n- **Member ID:** 77123-02\n- **Policy / plan:** UH-990-GOLD\n- **Group number:** UH990\n\n## Requesting provider\n\n- **Provider:** Not documented - clinician completion required\n- **NPI:** Not documented - clinician completion required\n- **Facility:** Not documented - clinician completion required\n\n## Procedures requiring authorization under this plan\n\n| CPT | Description | Source-grounded billed amount | Evidence source |\n| --- | --- | ---: | --- |\n| `29881` | Arthroscopic meniscectomy | INR 100,000.00 | aarav_surgeon_estimate.png |\n\n**Total requested amount:** INR 100,000.00\n\n## Clinical evidence\n\n- **Documented diagnosis codes:** M23.231\n- **Source documents reviewed:** aarav_surgeon_estimate.png\n- No symptoms, examination findings, failed therapies, or clinical conclusions have been added unless present in the uploaded evidence.\n\n## Clinician attestation\n\nI have reviewed this draft against the patient's medical record and attest that the requested services are medically necessary and accurately represented.\n\n**Clinician name:** ____________________\n**Signature:** ____________________\n**Date:** ____________________\n",
+      "generated_at": "2026-08-14T10:06:08.385969Z"
+    }
+  ],
+  "audio_briefing": {
+    "patient_name": "Aarav Sen",
+    "sections": [
+      {
+        "title": "Greeting",
+        "text": "Hello Aarav."
+      },
+      {
+        "title": "Summary",
+        "text": "We have completed the analysis of your uploaded medical documents, which include the documented diagnosis tear of medial meniscus. Our automated team has processed these files to coordinate your benefits."
+      },
+      {
+        "title": "Insurance",
+        "text": "We identified BlueShield Cross as your primary insurance provider, and UnitedHealth as your secondary insurance provider. The plans were applied in the payer order shown in the claim breakdown."
+      },
+      {
+        "title": "Financial Summary",
+        "text": "The total billed amount from your provider is 112000.00 rupees. The current estimate assigns 73600.00 rupees to the primary insurer, and 28200.00 rupees to the secondary insurer. This leaves an estimated patient responsibility of 10200.00 rupees. These are estimates based on the uploaded documents and synthetic plan rules; the insurer's explanation of benefits is authoritative."
+      },
+      {
+        "title": "Pre-Authorization",
+        "text": "Please note that prior authorization is required by UnitedHealth and BlueShield Cross for your scheduled procedures. Our administrative team has already generated draft prior-authorization requests for clinician verification and signature before submission."
+      },
+      {
+        "title": "Closing",
+        "text": "Before you submit the prior-authorization drafts, have the treating clinician verify and sign each one. Contact the insurer or clinic to confirm receipt and authorization status before scheduling."
+      }
+    ],
+    "full_narration": "Hello Aarav. We have completed the analysis of your uploaded medical documents, which include the documented diagnosis tear of medial meniscus. Our automated team has processed these files to coordinate your benefits. We identified BlueShield Cross as your primary insurance provider, and UnitedHealth as your secondary insurance provider. The plans were applied in the payer order shown in the claim breakdown. The total billed amount from your provider is 112000.00 rupees. The current estimate assigns 73600.00 rupees to the primary insurer, and 28200.00 rupees to the secondary insurer. This leaves an estimated patient responsibility of 10200.00 rupees. These are estimates based on the uploaded documents and synthetic plan rules; the insurer's explanation of benefits is authoritative. Please note that prior authorization is required by UnitedHealth and BlueShield Cross for your scheduled procedures. Our administrative team has already generated draft prior-authorization requests for clinician verification and signature before submission. Before you submit the prior-authorization drafts, have the treating clinician verify and sign each one. Contact the insurer or clinic to confirm receipt and authorization status before scheduling.",
+    "estimated_duration_seconds": 75.4
+  }
+}

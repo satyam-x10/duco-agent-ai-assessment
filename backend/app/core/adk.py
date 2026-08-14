@@ -2,6 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Optional, Callable, Awaitable
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -11,8 +12,7 @@ from app.schemas.medical_coding import CodingResult
 from app.schemas.insurance_engine import InsurancePolicy
 from app.schemas.cob_engine import COBDecision, ClaimLine
 from app.schemas.finance_engine import FinancialReport
-
-from pathlib import Path
+from workflows.cob_orchestrator_workflow import get_dual_coverage_workflow, DualCoverageWorkflowGraph
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,8 @@ class FatalBusinessError(Exception):
     pass
 
 
-# Error types that represent permanent business logic failures — never retry these.
-BUSINESS_ERROR_TYPES = (FatalBusinessError, RuntimeError)
+# Error types that represent permanent business logic failures — only non-retryable business logic halts.
+BUSINESS_ERROR_TYPES = (FatalBusinessError,)
 
 
 class TraceEntry(BaseModel):
@@ -99,6 +99,7 @@ class Orchestrator:
     def __init__(self, agents: List[Agent]):
         self.agents_list = agents
         self.agents_dict = {agent.name: agent for agent in agents}
+        self.workflow_graph: DualCoverageWorkflowGraph = get_dual_coverage_workflow()
         # Optional callback invoked after each agent completes successfully
         self._on_agent_complete: Optional[Callable[[str, int], Awaitable[None]]] = None
         # Optional callback invoked just before each agent starts executing

@@ -29,11 +29,11 @@ class PrimaryCoverage(BaseModel):
     allowed_amount: Optional[float] = Field(None, description="Plan contractual allowed amount")
     contractual_writeoff: float = Field(0.0, description="Provider discount or write-off amount")
     copay_applied: float = Field(0.0, description="Copay amount applied to the line")
-    deductible_applied: float = Field(..., description="Amount of primary deductible applied to this line")
-    coinsurance_rate: float = Field(..., description="Coinsurance percentage rate responsibility of the patient")
-    coinsurance_amount: float = Field(..., description="Coinsurance dollar amount billed to the patient")
-    primary_paid: float = Field(..., description="Amount paid by the primary insurer")
-    patient_responsibility: float = Field(..., description="Patient responsibility remaining after primary payment")
+    deductible_applied: float = Field(0.0, description="Amount of primary deductible applied to this line")
+    coinsurance_rate: float = Field(0.0, description="Coinsurance percentage rate responsibility of the patient")
+    coinsurance_amount: float = Field(0.0, description="Coinsurance dollar amount billed to the patient")
+    primary_paid: float = Field(0.0, description="Amount paid by the primary insurer")
+    patient_responsibility: float = Field(0.0, description="Patient responsibility remaining after primary payment")
 
 
 class SecondaryCoverage(BaseModel):
@@ -42,20 +42,21 @@ class SecondaryCoverage(BaseModel):
     is_covered: bool = Field(..., description="Whether the CPT code was covered by the secondary plan")
     allowed_amount: Optional[float] = Field(None, description="Secondary plan allowed amount")
     copay_applied: float = Field(0.0, description="Secondary copay amount applied")
-    deductible_applied: float = Field(..., description="Amount of secondary deductible applied/satisfied by this line")
-    coinsurance_rate: float = Field(..., description="Coinsurance percentage rate of the secondary policy")
-    coinsurance_amount: float = Field(..., description="Secondary coinsurance amount calculation")
-    secondary_paid: float = Field(..., description="Amount paid by the secondary insurer")
-    patient_responsibility: float = Field(..., description="Patient responsibility remaining after secondary coordination")
+    deductible_applied: float = Field(0.0, description="Amount of secondary deductible applied/satisfied by this line")
+    coinsurance_rate: float = Field(0.0, description="Coinsurance percentage rate of the secondary policy")
+    coinsurance_amount: float = Field(0.0, description="Secondary coinsurance amount calculation")
+    secondary_paid: float = Field(0.0, description="Amount paid by the secondary insurer")
+    patient_responsibility: float = Field(0.0, description="Patient responsibility remaining after secondary coordination")
 
 
 class RemainingBalance(BaseModel):
     """Summary of final line item financial allocations."""
-    billed_amount: float = Field(..., description="Original billed charge")
-    primary_paid: float = Field(..., description="Final payment amount from primary")
-    secondary_paid: float = Field(..., description="Final payment amount from secondary")
-    patient_responsibility: float = Field(..., description="Final out-of-pocket patient responsibility")
+    billed_amount: float = Field(0.0, description="Original billed charge")
+    primary_paid: float = Field(0.0, description="Final payment amount from primary")
+    secondary_paid: float = Field(0.0, description="Final payment amount from secondary")
+    patient_responsibility: float = Field(0.0, description="Final out-of-pocket patient responsibility")
     notes: Optional[str] = Field(None, description="Detailed explanation of the calculations or limits applied")
+    is_satisfied: bool = Field(True, description="Whether the balance is settled across insurers and patient")
 
 
 class ClaimLineCoverage(BaseModel):
@@ -86,13 +87,14 @@ class COBDecision(BaseModel):
     """The aggregate Coordination of Benefits decision result for a full claim."""
     claim_id: str = Field(..., description="Claim ID")
     patient_name: str = Field(..., description="Full name of the patient")
-    primary_policy_id: Optional[str] = Field(None, description="Resolved primary policy ID")
-    primary_provider: Optional[str] = Field(None, description="Resolved primary provider name")
-    secondary_policy_id: Optional[str] = Field(None, description="Resolved secondary policy ID")
-    secondary_provider: Optional[str] = Field(None, description="Resolved secondary provider name")
-    lines_coverage: List[ClaimLineCoverage] = Field(default_factory=list, description="Calculated line item breakdowns")
-    patient_claims: List[PatientClaimSummary] = Field(default_factory=list, description="Per-patient claim summaries")
-    total_billed: float = Field(..., description="Sum of original billed amounts")
-    total_primary_paid: float = Field(..., description="Sum of payments by primary")
-    total_secondary_paid: float = Field(..., description="Sum of payments by secondary")
-    total_patient_responsibility: float = Field(..., description="Sum of final patient out-of-pocket responsibility")
+    primary_policy_id: str = Field(..., description="Primary policy ID determined by COB rules")
+    primary_provider: Optional[str] = Field(None, description="Name of the primary insurance provider")
+    secondary_policy_id: Optional[str] = Field(None, description="Secondary policy ID (if dual coverage exists)")
+    secondary_provider: Optional[str] = Field(None, description="Name of the secondary insurance provider")
+    lines_coverage: List[ClaimLineCoverage] = Field(default_factory=list, description="Per-line breakdown of COB decisions")
+    total_billed: float = Field(..., description="Aggregated billed amount across all lines")
+    total_primary_paid: float = Field(..., description="Aggregated primary payout across all lines")
+    total_secondary_paid: float = Field(..., description="Aggregated secondary payout across all lines")
+    total_patient_responsibility: float = Field(..., description="Aggregated out-of-pocket patient responsibility")
+    patient_claims: List[PatientClaimSummary] = Field(default_factory=list, description="Patient-level breakdown when multiple family claims exist")
+    is_fully_adjudicated: bool = Field(True, description="Whether all lines passed adjudication successfully")

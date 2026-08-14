@@ -165,3 +165,113 @@ def test_audio_briefing_generation_aarav_surgery(briefing_service):
 
     closing_sec = next(s for s in briefing.sections if s.title == "Closing")
     assert "submit the prior-authorization" in closing_sec.text.lower()
+
+
+def test_audio_download_explicit_503_on_tts_failure(monkeypatch):
+    """Verify that /download/audio_summary.mp3 returns an explicit HTTP 503 error instead of silent silence on TTS failure."""
+    from fastapi.testclient import TestClient
+    from app.core.app import get_app
+    from app.api.v1.endpoints.analysis import jobs_db
+    from app.schemas.audio import AudioBriefing
+
+    app = get_app()
+    client = TestClient(app)
+
+    state = SharedWorkflowState(claim_id="CLAIM-AUDIO-FAIL", member_id="98765")
+    state.workflow_status = "success"
+    state.artifacts_finalized = True
+    state.audio_briefing = AudioBriefing(
+        patient_name="Priya Sen",
+        estimated_duration_seconds=30.0,
+        sections=[],
+        full_narration="This is a test narration for audio error testing."
+    )
+
+    jobs_db["test-audio-job-fail"] = {
+        "status": "completed",
+        "state": state,
+    }
+
+    # Simulate gTTS failure
+    def mock_gtts_raise(*args, **kwargs):
+        raise RuntimeError("Google TTS network endpoint unreachable")
+
+    import gtts
+    monkeypatch.setattr(gtts, "gTTS", mock_gtts_raise)
+
+    response = client.get("/api/v1/reports/download/audio_summary.mp3?job_id=test-audio-job-fail")
+    assert response.status_code == 503
+    assert "unavailable" in response.json()["detail"].lower()
+
+
+def test_cost_flow_svg_download_endpoint():
+    """Verify that /download/cost_flow.svg generates and returns a valid image/svg+xml payload."""
+    from fastapi.testclient import TestClient
+    from app.core.app import get_app
+    from app.api.v1.endpoints.analysis import jobs_db
+    from app.schemas.finance_engine import FinancialReport, CostSummary, PatientResponsibility, FinancialBreakdown
+    from app.schemas.cob_engine import COBDecision, ClaimLineCoverage, PrimaryCoverage, SecondaryCoverage, RemainingBalance
+
+    app = get_app()
+    client = TestClient(app)
+
+    state = SharedWorkflowState(claim_id="CLAIM-SVG-TEST", member_id="98765")
+    state.workflow_status = "success"
+    state.artifacts_finalized = True
+    state.financial_report = FinancialReport(
+        report_id="REP-SVG",
+        claim_id="CLAIM-SVG-TEST",
+        patient_name="Priya Sen",
+        breakdown=FinancialBreakdown(
+            allocations=[],
+            patient_responsibility=PatientResponsibility(
+                total_deductible=0.0, total_coinsurance=50.0, total_responsibility=50.0, explanation_notes=""
+            ),
+            summary=CostSummary(
+                total_billed=500.0, total_primary_paid=450.0, total_secondary_paid=0.0,
+                total_insurer_paid=450.0, total_patient_responsibility=50.0, total_savings=450.0
+            )
+        ),
+        generated_at="2026-08-14T00:00:00Z"
+    )
+    state.cob_decision = COBDecision(
+        claim_id="CLAIM-SVG-TEST",
+        patient_name="Priya Sen",
+        primary_policy_id="BS-120-BLUE",
+        primary_provider="BlueShield Cross",
+        lines_coverage=[
+            ClaimLineCoverage(
+                cpt_code="97161",
+                billed_amount=500.0,
+                patient_name="Priya Sen",
+                member_id="98765",
+                primary_coverage=PrimaryCoverage(
+                    policy_id="BS-120-BLUE", is_covered=True, allowed_amount=500.0,
+                    deductible_applied=0.0, coinsurance_rate=0.10, coinsurance_amount=50.0,
+                    primary_paid=450.0, patient_responsibility=50.0
+                ),
+                secondary_coverage=SecondaryCoverage(
+                    policy_id="", is_covered=False, deductible_applied=0.0, secondary_paid=0.0
+                ),
+                remaining_balance=RemainingBalance(
+                    patient_responsibility=50.0, is_satisfied=True
+                )
+            )
+        ],
+        total_billed=500.0,
+        total_primary_paid=450.0,
+        total_secondary_paid=0.0,
+        total_patient_responsibility=50.0,
+        is_fully_adjudicated=True
+    )
+
+    jobs_db["test-svg-job"] = {
+        "status": "completed",
+        "state": state,
+    }
+
+    response = client.get("/api/v1/reports/download/cost_flow.svg?job_id=test-svg-job")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert "<svg" in response.text
+    assert "Priya Sen" in response.text

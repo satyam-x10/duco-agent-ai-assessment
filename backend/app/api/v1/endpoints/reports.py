@@ -373,11 +373,66 @@ async def download_letter(insurer_name: str, job_id: str):
         }
     )
 
+@router.get("/download/cost_flow.svg")
+async def download_cost_flow(job_id: str):
+    """
+    Generates and downloads a dynamic SVG waterfall chart representing the exact live COB decision.
+    """
+    if job_id not in jobs_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Analysis job '{job_id}' not found."
+        )
+
+    job = jobs_db[job_id]
+    state = job.get("state")
+    if job.get("status") != "completed" or not state or state.workflow_status != "success" or not state.artifacts_finalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Workflow state is not ready or failed."
+        )
+
+    from services.cost_flow import CostFlowVisualizerService
+    
+    fin = state.financial_report.breakdown.summary if state.financial_report else None
+    total_billed = fin.total_billed if fin else 0.0
+    primary_paid = fin.total_primary_paid if fin else 0.0
+    secondary_paid = fin.total_secondary_paid if fin else 0.0
+    patient_resp = fin.total_patient_responsibility if fin else 0.0
+    
+    lines_summary = []
+    if state.cob_decision and state.cob_decision.lines_coverage:
+        for line in state.cob_decision.lines_coverage:
+            lines_summary.append({
+                "cpt_code": line.cpt_code,
+                "billed_amount": line.billed_amount,
+            })
+    
+    svg_content = CostFlowVisualizerService.generate_svg(
+        billed=total_billed,
+        primary_paid=primary_paid,
+        secondary_paid=secondary_paid,
+        patient_responsibility=patient_resp,
+        primary_payer=state.cob_decision.primary_provider if state.cob_decision else "Primary Payer",
+        secondary_payer=state.cob_decision.secondary_provider if state.cob_decision else None,
+        patient_name=state.cob_decision.patient_name if state.cob_decision else "Patient",
+        lines_summary=lines_summary,
+    )
+
+    return Response(
+        content=svg_content.encode("utf-8"),
+        media_type="image/svg+xml",
+        headers={
+            "Content-Disposition": "attachment; filename=dual_coverage_cost_flow.svg"
+        }
+    )
+
 
 @router.get("/download/audio_summary.mp3")
 async def download_audio_summary(job_id: str):
     """
-    Streams a valid audio summary MP3 file containing the narration briefing.
+    Streams an audio summary MP3 file containing the narration briefing.
+    Raises an explicit HTTP 503 error if the text-to-speech engine fails rather than returning silent frames.
     """
     if job_id not in jobs_db:
         raise HTTPException(
@@ -393,6 +448,12 @@ async def download_audio_summary(job_id: str):
             detail="Audio is unavailable until the workflow is finalized.",
         )
     
+    if not state.audio_briefing or not state.audio_briefing.full_narration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audio briefing narration text is missing from finalized state."
+        )
+
     narration_text = state.audio_briefing.full_narration
         
     try:
@@ -403,10 +464,10 @@ async def download_audio_summary(job_id: str):
         tts.write_to_fp(fp)
         mp3_bytes = fp.getvalue()
     except Exception as e:
-        logger.warning(f"Failed to generate TTS MP3: {e}")
+        logger.error(f"Failed to generate TTS MP3 via online service: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Speech synthesis is temporarily unavailable; use the in-browser narration player.",
+            detail=f"Text-to-speech audio service is currently unavailable: {str(e)}. Please review the text transcript."
         )
     
     return Response(

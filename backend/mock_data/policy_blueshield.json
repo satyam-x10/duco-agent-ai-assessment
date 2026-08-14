@@ -2,6 +2,9 @@
   "policy_id": "BS-120-BLUE",
   "provider_name": "BlueShield Cross",
   "group_number": "BS120",
+  "policy_version": "2026.1-PROD",
+  "source_regulation": "NAIC Model COB Regulation #120; ACA Sec. 2707; CPT 2026 Professional Fee Schedule",
+  "effective_date": "2026-01-01",
   "deductible": {
     "individual": 50000.0,
     "family": 100000.0,

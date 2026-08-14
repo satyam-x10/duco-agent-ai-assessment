@@ -1,26 +1,20 @@
-# DuCO-Agent: Dual Coverage AI Orchestrator
+# 🛡️ DuCO-Agent: Dual Coverage AI Orchestrator
 
 DuCO-Agent is a high-fidelity, multi-agent AI system designed to coordinate medical benefits for families with dual insurance coverage. The application parses clinical documentation (PDFs, images, and text), resolves primary and secondary insurance policies, determines exact coverage and coinsurance calculations, drafts prior-authorization letters, and generates spoken patient-narrative briefings.
 
 ---
 
-## 1. Architectural Overview
+## 🗺️ System Architecture
 
-DuCO-Agent is designed around a **clean separation of concerns**:
-*   **Dynamic Agentic Planner**: Instead of a predefined static sequence, the orchestrator acts as a dynamic planner that inspects the live `SharedWorkflowState` and conditionally routes/backtracks to different specialist agents.
-*   **Specialist Agents (Orchestration)**: Typed asynchronous Python agents handle execution, validation, audits, and trace logging under the planner's direction. Gemini is used only for OCR/coding/reviewer inference when explicitly configured.
-*   **Core Services (Business Logic)**: Standalone Python engines implement COB order, CPT coverage, medical-necessity checks, per-member deductible/OOP accumulators, INR rounding, and financial conservation checks. LLM output never supplies payment calculations.
-*   **Shared Workflow State**: A unified transaction registry (`SharedWorkflowState`) that tracks variables and accumulates parsed results as the pipeline moves from Intake to Final Review.
-
-### System Architecture Diagram
+The codebase follows a strict separation of concerns, dividing execution between a React/TypeScript frontend and a FastAPI backend powered by specialized AI agents and deterministic calculation engines.
 
 ```mermaid
 graph TD
-    subgraph Frontend [React Frontend - Vite]
+    subgraph Frontend [React Web Application]
         UI[Results & Intake Dashboard] --> API[ApiService - Axios]
     end
     
-    subgraph Backend [FastAPI Backend]
+    subgraph Backend [FastAPI Backend Server]
         API --> Routes[FastAPI Router - api/v1]
         Routes --> Orchestrator[Orchestrator Agent]
         
@@ -51,167 +45,129 @@ graph TD
 
 ---
 
-## 2. Dynamic Planning & Conditional Routing
+## 🧠 Dynamic Control Flow & Agentic Planning
 
-Rather than coordinating agents in a rigid linear sequence, DuCO-Agent uses a **dynamic, state-inspecting planner** to coordinate specialist execution. The planner evaluates the live `SharedWorkflowState` at each step and makes autonomous routing decisions:
+Instead of executing in a rigid, hardcoded sequential script, the pipeline is guided by a **Dynamic Orchestrator Planner** ([adk.py](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/app/core/adk.py)) that inspects the live `SharedWorkflowState` and makes routing, backtracking, self-correcting retry, or approval decisions.
 
-1. **OCR Confidence Audit (Rule 1)**
-   - If `DocIntelAgent` finishes but any parsed document yields a confidence score `< 0.95`, the planner discards downstream progress, clears the document cache, activates the `"high_fidelity"` strategy in `ocr_strategies`, and routes execution back to `DocIntelAgent`.
-2. **Missing Diagnosis Correction / Clarification (Rule 2)**
-   - If `MedicalCodingAgent` extracts no ICD-10 diagnoses:
-     - On the first attempt, the planner automatically triggers a self-correcting retry loop back to `MedicalCodingAgent` with active warnings.
-     - If no diagnoses are resolved after the retry, the planner halts the pipeline, bypasses all insurance/financial agents, flags `state.requires_human_approval = True`, and updates the status to request human clarification.
-3. **COBAgent Bypass for Single Coverage (Rule 3)**
-   - If the patient only holds one active insurance policy, the planner dynamically bypasses the execution of `COBAgent` in the trace, executing the benefit calculations via the `COBEngine` silently to construct the required `cob_decision` for the financial ledger without running the separate specialist step.
-4. **Prior Authorization Letter Minimization (Rule 4)**
-   - The system checks if any extracted CPT procedure requires pre-authorization under the mapped policies. If no procedure requires pre-authorization, the `PreAuthorizationService` skips letter generation entirely, returning an empty set of request documents.
-5. **Reviewer Quality Backtracking & Audit Corrections (Rule 5)**
-   - During the final audit phase, `ReviewerAgent` flags logical inconsistencies (e.g. name mismatches between insurers or policy subscribers and medical records, uncovered procedure codes, or missing diagnoses).
-   - The planner inspects these warnings:
-     - **Coding/clinical inconsistencies** trigger backtracking loops back to `MedicalCodingAgent` (up to 2 runs).
-     - **Insurance/policy resolution inconsistencies** trigger backtracking loops back to `InsuranceAgent` (up to 2 runs).
+### Dynamic Decision Paths
 
----
+```mermaid
+stateDiagram-v2
+    [*] --> IntakeAgent
+    IntakeAgent --> DocIntelAgent : Files Staged
+    
+    DocIntelAgent --> DocIntelAgent : OCR Confidence < 0.95 (High-Fidelity Retry)
+    DocIntelAgent --> MedicalCodingAgent : OCR Confidence >= 0.95
+    
+    MedicalCodingAgent --> MedicalCodingAgent : No Diagnoses (Self-Correcting Retry)
+    MedicalCodingAgent --> HumanClarification : No Diagnoses after Retry (Halt)
+    MedicalCodingAgent --> InsuranceAgent : Diagnoses Extracted
+    
+    InsuranceAgent --> FinanceAgent : Single Insurance Policy (Bypass COBAgent)
+    InsuranceAgent --> COBAgent : Dual Coverage Policy Mapped
+    
+    COBAgent --> FinanceAgent : claim_lines Adjudicated
+    
+    FinanceAgent --> ReviewerAgent : Financial Report Generated
+    
+    ReviewerAgent --> MedicalCodingAgent : Review Warning (Coding Inconsistency Backtrack)
+    ReviewerAgent --> InsuranceAgent : Review Warning (Policy Inconsistency Backtrack)
+    ReviewerAgent --> AwaitingApproval : Audit Warnings Cleared
+    
+    AwaitingApproval --> RejectAction : Clinician Rejects (Feedback Loop Retry)
+    RejectAction --> MedicalCodingAgent : Re-run with Audit Feedback
+    AwaitingApproval --> ApproveAction : Clinician Approves
+    
+    ApproveAction --> FinalizeArtifacts : Final Report & Audio Compiled
+    FinalizeArtifacts --> [*]
+```
 
-## 3. Agent Responsibilities
-
-The Multi-Agent framework orchestrates seven specialist agents:
-
-| Agent | Icon | Core Responsibility |
-| :--- | :---: | :--- |
-| **Intake Agent** | 📥 | Validates uploaded files, verifies patient details, and initializes the workflow transaction. |
-| **Doc Intel Agent** | 🔍 | Directs PDF parsing and Gemini Vision OCR extraction based on the uploaded file format. |
-| **Medical Coding Agent** | 🏷️ | Analyzes clinical texts to infer ICD-10 diagnosis codes and CPT procedure codes using Gemini. |
-| **Insurance Agent** | 🛡️ | Loads and resolves active policy details, matching group numbers and subscriber data. |
-| **COB Agent** | 🔀 | Applies insurance coordination guidelines (e.g. Birthday Rule, subscriber-first) to set claim payment order. |
-| **Finance Agent** | 💵 | Calculates exact payment allocations, deductible applications, coinsurance, and out-of-pocket maximum limits. |
-| **Reviewer Agent** | ⚖️ | Audits the final state, flagging name mismatches, low coding confidence, or missing authorization drafts. |
-
----
-
-## 4. Technology Stack
-
-*   **Frontend**: React (v19), TypeScript, TailwindCSS (v4), React Router, Axios, and Vite.
-*   **Backend**: Python (v3.10), FastAPI, Pydantic (Type validation), PyPDF (PDF metadata & parsing).
-*   **AI & Reasoning**: Google Gemini 2.5 Flash via structured JSON schemas for optional OCR, coding inference, and reviewer assistance.
+> [!IMPORTANT]
+> **Clinician Approval Gate:** Results, downloadable PDFs, and audio briefs remain locked and unavailable to the user while reviewer warnings await clinician review. Approval finalizes the artifacts, whereas Rejection feeds auditor notes back into the warning state to drive a self-correction retry loop.
 
 ---
 
-## 5. Folder Structure
+## 🤖 Specialist Agents Directory
+
+The orchestrator utilizes seven specialist agents, each holding a distinct boundary of responsibility:
+
+| Agent | Icon | File Location | Core Responsibility |
+| :--- | :---: | :--- | :--- |
+| **Intake Agent** | 📥 | [`intake.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/agents/intake.py) | Validates staging folders and checks that all uploaded files are present in the transaction slot. |
+| **Doc Intel Agent** | 🔍 | [`document_intelligence.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/agents/document_intelligence.py) | Directs PDF parsing and Gemini Vision OCR/RapidOCR extraction based on document formats. |
+| **Medical Coding Agent** | 🏷️ | [`medical_coding.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/agents/medical_coding.py) | Extracts and deduplicates CPT procedure and ICD-10 diagnosis codes from texts using Gemini with reflection prompts. |
+| **Insurance Agent** | 🛡️ | [`insurance.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/agents/insurance.py) | Maps active insurance policy details, subscriber roles, and individual/family coverage limits. |
+| **COB Agent** | 🔀 | [`cob.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/agents/cob.py) | Evaluates insurer payment orders (e.g., Birthday Rule) and initiates coordinate benefits adjudication. |
+| **Finance Agent** | 💵 | [`finance.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/agents/finance.py) | Translates raw COB decisions into audited ledger breakdowns and out-of-pocket splits. |
+| **Reviewer Agent** | ⚖️ | [`reviewer.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/agents/reviewer.py) | Audits consistency between clinical findings, names across insurers, and covers, logging warnings. |
+
+---
+
+## ⚙️ Core Engines & Services
+
+All healthcare rules, document extraction heuristics, and financial ledgers are evaluated by **deterministic python algorithms**—never delegated to LLM hallucination.
+
+*   **[`cob_engine.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/services/cob_engine.py)**: Evaluates coordination guidelines (Subscriber-First, Birthday Rule, Stable Sorting Fallback) and performs line-by-line copay, deductible satisfaction, and coinsurance rate splitting.
+*   **[`finance_engine.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/services/finance_engine.py)**: Performs Decimal arithmetic calculations to split out-of-pocket patient costs. Enforces conservation of funds:
+    $$\text{Billed Amount} = \text{Primary Paid} + \text{Secondary Paid} + \text{Patient Responsibility} + \text{Contractual Writeoff}$$
+*   **[`document_facts.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/services/document_facts.py)**: Deterministically extracts patient name, member ID, dates of birth, and cpt/invoiced amounts from OCR texts.
+*   **[`preauth.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/services/preauth.py)**: Selects procedure CPT lines requiring pre-authorization and drafts structured markdown requests.
+*   **[`audio.py`](file:///c:/Projects/hcl/duco-agent-ai-assessment/backend/services/audio.py)**: Structures clear, patient-friendly spoken summaries broken into Greeting, Insurance, Financials, and Pre-Auth sections.
+
+---
+
+## 📂 Project Organization
 
 ```text
 duco-agent-ai-assessment/
 │
-├── frontend/                   # React TypeScript Web Application
+├── frontend/                   # React Vite Web Application
 │   ├── src/
 │   │   ├── components/         # Reusable layouts, visual timeline, SVG visualizer
-│   │   ├── pages/              # Intake Workspace and Results dashboard pages
-│   │   ├── services/           # ApiService axios connector
-│   │   └── types/              # Frontend TypeScript definitions
-│   ├── package.json            # Scripts (dev, build, lint, preview)
+│   │   ├── pages/              # Intake Workspace and Results pages
+│   │   │   └── Results/
+│   │   │       └── ResultsPage.tsx # Core results visualization
+│   │   └── services/           # ApiService Axios connector
+│   ├── package.json            # Vite scripts (dev, build, lint)
 │   └── vite.config.ts          # Vite configuration
 │
 ├── backend/                    # FastAPI python microservice
-│   ├── agents/                 # Python ADK-based specialist agents definitions
+│   ├── agents/                 # Python ADK-based specialist agents
 │   ├── app/
-│   │   ├── api/v1/endpoints/   # Intake, analysis, and report routers
-│   │   ├── core/               # Google ADK base classes (Agent, SharedWorkflowState)
-│   │   ├── dependencies/       # Dependency Injection hooks
-│   │   └── schemas/            # Request/Response Pydantic validation schemas
+│   │   ├── api/v1/endpoints/   # Route handlers (Intake, Analysis, Reports)
+│   │   │   ├── analysis.py     # Background orchestrator execution
+│   │   │   └── reports.py      # PDF / EOB / Audio generation endpoints
+│   │   └── core/
+│   │       └── adk.py          # Core orchestrator and SharedWorkflowState
 │   ├── mock_data/              # Policy rules for BlueShield and UnitedHealth
-│   ├── services/               # Core algorithms (COB, Finance, Audio Briefing, Doc-Intel)
-│   ├── tests/                  # Pytest suite
-│   ├── requirements.txt        # Backend dependencies
-│   └── main.py                 # FastAPI server startup entrypoint
+│   ├── sample_inputs/          # Committed scans, estimates, and PDFs
+│   ├── services/               # Core business algorithms (COB, Finance, Audio, Doc-Intel)
+│   ├── tools/                  # Agent actions (Medical Coding, OCR, Insurer Lookup)
+│   └── tests/                  # Pytest test suite
 │
-└── README.md                   # Main system documentation
+└── README.md                   # Main documentation guide
 ```
 
 ---
 
-## 6. End-to-End Workflow Sequence
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant Frontend
-    participant BackendRouter as FastAPI Router
-    participant Orchestrator as Orchestrator Agent (Dynamic Planner)
-    participant SharedState as SharedWorkflowState
-    participant Agents as Specialist Agents
-    participant Services as System Services
-    
-    User->>Frontend: Clicks 'Start Assessment' or 'Load Demo Scenario'
-    Frontend->>BackendRouter: POST /api/v1/analysis/start
-    BackendRouter-->>Frontend: Returns Job ID (202 Accepted)
-    
-    loop Polling Status
-        Frontend->>BackendRouter: GET /api/v1/analysis/status/{jobId}
-        BackendRouter-->>Frontend: Return Progress % & Status Msg
-    end
-    
-    Note over BackendRouter, Services: On Job start, Orchestrator executes dynamic planning loop
-    BackendRouter->>Orchestrator: execute(state)
-    Orchestrator->>SharedState: Initialize claim_id, member_id
-    
-    loop Planner Loop (up to max_steps)
-        Orchestrator->>Orchestrator: Inspect current SharedWorkflowState
-        Note over Orchestrator: Planner decides next agent conditionally
-        
-        alt Intake is not run
-            Orchestrator->>Agents: Run IntakeAgent
-        else Low OCR confidence (< 0.95)
-            Orchestrator->>Agents: Backtrack to DocIntelAgent (High-Fidelity)
-        else Medical coding is not run / empty diagnoses
-            Orchestrator->>Agents: Run / Backtrack to MedicalCodingAgent
-        else Insurance policies are not resolved
-            Orchestrator->>Agents: Run / Backtrack to InsuranceAgent
-        else Dual coverage resolved
-            Orchestrator->>Agents: Run COBAgent
-        else Single coverage resolved
-            Orchestrator->>Orchestrator: Bypass COBAgent, calculate COB silently
-        else Financial report is not run
-            Orchestrator->>Agents: Run FinanceAgent
-        else Audit check is not run
-            Orchestrator->>Agents: Run ReviewerAgent
-        else Reviewer found inconsistencies (Coding/Policy)
-            Orchestrator->>Orchestrator: Backtrack to MedicalCodingAgent or InsuranceAgent
-        end
-        
-        Agents->>SharedState: Mutate state & write trace logs
-    end
-    
-    BackendRouter->>Services: PreAuthorizationService.generate_letters(state)
-    Note over Services: Skips generation if no procedures require preauth
-    Services-->>BackendRouter: Letters Markdown (if any)
-    BackendRouter->>Services: AudioBriefingService.generate_briefing(state)
-    Services-->>BackendRouter: Spoken Patient Narration Script
-    
-    BackendRouter-->>Frontend: Final consolidated ReportSummaryResponse
-    Frontend->>User: Displays dashboard with financial card, cost flow, preauth letters, and audio narration.
-```
-
----
-
-## 7. Setup & Execution Instructions
+## 🚀 Setup & Execution Guide
 
 ### Prerequisites
 *   Node.js (v18+)
 *   Python (v3.10+)
 
-### Backend Server Setup
+### 1. Backend Server Setup
 1.  Navigate to the backend directory:
     ```bash
     cd backend
     ```
 2.  Create and activate a python virtual environment:
     ```bash
-    # Windows
+    # Windows Powershell
     python -m venv .venv
     .venv\Scripts\activate
 
-    # macOS / Linux
+    # macOS / Linux / Bash
     python3 -m venv .venv
     source .venv/bin/activate
     ```
@@ -219,7 +175,7 @@ sequenceDiagram
     ```bash
     pip install -r requirements.txt
     ```
-4.  *(Optional)* Set the Gemini API key for inference when a document does not explicitly contain clinical codes. Without a key, explicit codes are processed deterministically and inference-only inputs fail closed; mock substitution is available only through the explicitly selected Demo mode:
+4.  *(Optional)* Set the Gemini API key to enable LLM-based clinical-code inference and reviewer audits. (Without a key, explicit document facts are parsed deterministically; inference-only scenarios fail closed):
     ```bash
     # Windows Powershell
     $env:GEMINI_API_KEY="your-api-key"
@@ -231,18 +187,18 @@ sequenceDiagram
     ```bash
     python main.py
     ```
-    The API runs at `http://localhost:8000`.
+    The server runs at `http://127.0.0.1:8000`.
 
-### Frontend Web App Setup
+### 2. Frontend Web App Setup
 1.  Navigate to the frontend directory:
     ```bash
     cd ../frontend
     ```
-2.  Install packages:
+2.  Install dependencies:
     ```bash
     npm install
     ```
-3.  Start the development server:
+3.  Start the dev server:
     ```bash
     npm run dev
     ```
@@ -250,27 +206,16 @@ sequenceDiagram
 
 ---
 
-## 8. Assumptions & General Limitations
+## 🧪 Verification & Tests
 
-### Assumptions
-*   **Dual Policies**: The customer coordinates between exactly two plans (BlueShield Cross and UnitedHealth).
-*   **Birthday Rule**: Claims for dependents (e.g. Aarav Sen) prioritize the primary insurer based on whichever parent's birthday falls earlier in the calendar year.
-*   **Pace**: Conversational reading pace is estimated at 140 WPM to compute narration durations.
-
-### Grounding and safety behavior
-*   **Patient-specific claims**: Documents are grouped by resolved patient identity. Priya's services and Aarav's services are adjudicated as separate claims with their own payer order and accumulators, then aggregated for the family dashboard.
-*   **No invented prices**: Claim lines must carry an amount extracted from a source document. Total-only invoices may use a labeled deterministic allocation that forces clinician approval; otherwise the workflow stops instead of using a fixed CPT price.
-*   **Scanned documents**: Image and scanned-PDF OCR support both RapidOCR and Gemini Vision. Real PNG/PDF fixtures and local OCR integration tests are included under `backend/sample_inputs`.
-*   **Approval gate**: Reports, PDFs, and downloadable audio remain unavailable while reviewer findings await clinician approval. Rejection preserves the existing evidence, trace, and feedback for the correction pass.
-*   **Artifacts**: Prior-authorization letters are clinician-review drafts containing only procedures requiring authorization for that patient and plan. Missing provider fields remain visibly incomplete rather than being fabricated.
-*   **Audio**: The browser can read the grounded narration through the Web Speech API. MP3 generation fails explicitly if the configured speech service is unavailable; it never returns fake silence.
-
-### Verification
+A comprehensive suite of 70 tests covers the mathematical engines, coordination order rules, document intelligence text extractors, pre-authorization letter compilers, and audio narrations.
 
 ```bash
+# Run backend pytest suite
 cd backend
-python -m pytest -q
+.venv\Scripts\python -m pytest
 
+# Run frontend linting & typescript build checks
 cd ../frontend
 npx tsc -b --noEmit
 npm run lint
@@ -278,8 +223,10 @@ npm run lint
 
 ---
 
-## 9. Future Improvements
+## 📜 Compliance & Safety Rules
 
-*   **Text-to-Speech (TTS) Streaming**: Integrate Google Cloud Text-to-Speech to dynamically stream generated patient audio briefings directly from the frontend.
-*   **Database Persistence**: Move from an in-memory job database to PostgreSQL for persistent historical claims auditing.
-*   **User Policy Customizer**: Allow clinics to dynamically upload new insurer policy rules (JSON format) directly from the UI.
+To ensure clinical soundness and medical safety, the system enforces the following constraints:
+1.  **Birthday Rule Order**: For dependent children, the primary policy is resolved based on the parent whose birthday falls earliest in the calendar year. Subscriber roles take absolute precedence over dependent roles.
+2.  **Separate Letters per Patient**: Claim lines for different family members (e.g., Aarav and Priya) are processed as separate claims and generate separate pre-authorization request letters. Combining family members in a single request is blocked to avoid administrative confusion.
+3.  **No Hallucinated Data**: Prior-authorization letters draft placeholders for missing provider names, facility details, or NPIs, clearly marking them as `"Not documented - clinician completion required"` rather than inventing fields.
+4.  **Audio Availability**: Estimated reading duration section segments are compiled at 140 WPM. The audio briefing endpoint fails explicitly (returning HTTP 503) if the Text-to-Speech API is down, prompting the user to read the text rather than providing a silent audio stream.

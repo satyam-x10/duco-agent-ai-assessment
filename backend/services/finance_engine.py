@@ -1,7 +1,8 @@
 import uuid
 import logging
 from datetime import datetime
-from typing import List
+from decimal import Decimal, ROUND_HALF_UP
+from typing import List, Union
 
 from app.schemas.cob_engine import COBDecision
 from app.schemas.finance_engine import (
@@ -14,104 +15,130 @@ from app.schemas.finance_engine import (
 
 logger = logging.getLogger(__name__)
 
+PENCE = Decimal("0.01")
+
+
+def _d(value: Union[float, int, str, Decimal, None]) -> Decimal:
+    """Safely converts any numeric input to a 2-decimal rounded Decimal."""
+    if value is None:
+        return Decimal("0.00")
+    if isinstance(value, Decimal):
+        return value.quantize(PENCE, rounding=ROUND_HALF_UP)
+    try:
+        return Decimal(str(value)).quantize(PENCE, rounding=ROUND_HALF_UP)
+    except Exception:
+        try:
+            return Decimal(float(value)).quantize(PENCE, rounding=ROUND_HALF_UP)
+        except Exception:
+            return Decimal("0.00")
+
+
+def _f(d: Decimal) -> float:
+    """Converts a Decimal to float rounded to 2 decimal places."""
+    return float(d.quantize(PENCE, rounding=ROUND_HALF_UP))
+
 
 class FinanceEngine:
-    """Engine responsible for translating claim coordination results (COBDecision) into audited financial reports."""
+    """Engine responsible for translating claim coordination results (COBDecision) into audited financial reports with Decimal precision."""
 
     def generate_financial_breakdown(self, cob_decision: COBDecision) -> FinancialReport:
-        """Processes a Coordination of Benefits decision and structures it into a comprehensive FinancialReport."""
+        """Processes a Coordination of Benefits decision and structures it into a comprehensive, conservation-verified FinancialReport."""
         logger.info(f"Generating financial breakdown for claim {cob_decision.claim_id}")
 
         allocations: List[PaymentAllocation] = []
-        total_billed = 0.0
-        total_primary_paid = 0.0
-        total_secondary_paid = 0.0
-        total_deductible_paid = 0.0
-        total_coinsurance_paid = 0.0
-        total_patient_responsibility = 0.0
+        total_billed_d = Decimal("0.00")
+        total_primary_paid_d = Decimal("0.00")
+        total_secondary_paid_d = Decimal("0.00")
+        total_deductible_paid_d = Decimal("0.00")
+        total_coinsurance_paid_d = Decimal("0.00")
+        total_patient_responsibility_d = Decimal("0.00")
+        total_writeoff_d = Decimal("0.00")
         denial_notes = []
 
         for line_cov in cob_decision.lines_coverage:
             cpt = line_cov.cpt_code
-            billed = line_cov.billed_amount
-            pri_paid = line_cov.primary_coverage.primary_paid
-            sec_paid = line_cov.secondary_coverage.secondary_paid
-            pat_resp = line_cov.remaining_balance.patient_responsibility
+            billed_d = _d(line_cov.billed_amount)
+            pri_paid_d = _d(line_cov.primary_coverage.primary_paid)
+            sec_paid_d = _d(line_cov.secondary_coverage.secondary_paid)
+            pat_resp_d = _d(line_cov.remaining_balance.patient_responsibility)
+            writeoff_d = _d(line_cov.primary_coverage.contractual_writeoff if hasattr(line_cov.primary_coverage, "contractual_writeoff") else 0.0)
 
             # Gather denial notes
             notes = line_cov.remaining_balance.notes
-            if notes and ("not medically necessary" in notes.lower() or "not covered" in notes.lower()):
+            if notes and ("not medically necessary" in notes.lower() or "not covered" in notes.lower() or "denied" in notes.lower()):
                 denial_notes.append(notes)
 
-            # Calculate deductible vs coinsurance patient out-of-pocket splits
-            patient_ded_applied = 0.0
-            patient_coins_applied = 0.0
+            # Calculate deductible vs coinsurance patient out-of-pocket splits using exact policy-applied values
+            patient_ded_applied_d = Decimal("0.00")
+            patient_coins_applied_d = Decimal("0.00")
 
             if line_cov.primary_coverage.is_covered:
-                pri_ded = line_cov.primary_coverage.deductible_applied
-                if pat_resp <= pri_ded:
-                    patient_ded_applied = pat_resp
+                pri_ded_d = _d(line_cov.primary_coverage.deductible_applied)
+                if pat_resp_d <= pri_ded_d:
+                    patient_ded_applied_d = pat_resp_d
+                    patient_coins_applied_d = Decimal("0.00")
                 else:
-                    patient_ded_applied = pri_ded
-                    patient_coins_applied = pat_resp - pri_ded
+                    patient_ded_applied_d = pri_ded_d
+                    patient_coins_applied_d = pat_resp_d - pri_ded_d
             elif line_cov.secondary_coverage.is_covered:
-                sec_ded = line_cov.secondary_coverage.deductible_applied
-                if pat_resp <= sec_ded:
-                    patient_ded_applied = pat_resp
+                sec_ded_d = _d(line_cov.secondary_coverage.deductible_applied)
+                if pat_resp_d <= sec_ded_d:
+                    patient_ded_applied_d = pat_resp_d
+                    patient_coins_applied_d = Decimal("0.00")
                 else:
-                    patient_ded_applied = sec_ded
-                    patient_coins_applied = pat_resp - sec_ded
+                    patient_ded_applied_d = sec_ded_d
+                    patient_coins_applied_d = pat_resp_d - sec_ded_d
             else:
                 # Neither covers: full patient responsibility is treated as coins/uncovered balance
-                patient_coins_applied = pat_resp
+                patient_coins_applied_d = pat_resp_d
 
-            # Clean float rounding
-            patient_ded_applied = round(patient_ded_applied, 2)
-            patient_coins_applied = round(patient_coins_applied, 2)
-
-            total_billed += billed
-            total_primary_paid += pri_paid
-            total_secondary_paid += sec_paid
-            total_deductible_paid += patient_ded_applied
-            total_coinsurance_paid += patient_coins_applied
-            total_patient_responsibility += pat_resp
+            # Accumulate totals in Decimal arithmetic
+            total_billed_d += billed_d
+            total_primary_paid_d += pri_paid_d
+            total_secondary_paid_d += sec_paid_d
+            total_deductible_paid_d += patient_ded_applied_d
+            total_coinsurance_paid_d += patient_coins_applied_d
+            total_patient_responsibility_d += pat_resp_d
+            total_writeoff_d += writeoff_d
 
             allocations.append(
                 PaymentAllocation(
                     cpt_code=cpt,
-                    billed_amount=billed,
-                    primary_paid=pri_paid,
-                    secondary_paid=sec_paid,
-                    patient_deductible_applied=patient_ded_applied,
-                    patient_coinsurance_applied=patient_coins_applied,
-                    patient_responsibility=pat_resp,
+                    billed_amount=_f(billed_d),
+                    primary_paid=_f(pri_paid_d),
+                    secondary_paid=_f(sec_paid_d),
+                    patient_deductible_applied=_f(patient_ded_applied_d),
+                    patient_coinsurance_applied=_f(patient_coins_applied_d),
+                    patient_responsibility=_f(pat_resp_d),
                 )
             )
 
-        # Round totals
-        total_billed = round(total_billed, 2)
-        total_primary_paid = round(total_primary_paid, 2)
-        total_secondary_paid = round(total_secondary_paid, 2)
-        total_insurer_paid = round(total_primary_paid + total_secondary_paid, 2)
-        total_deductible_paid = round(total_deductible_paid, 2)
-        total_coinsurance_paid = round(total_coinsurance_paid, 2)
-        total_patient_responsibility = round(total_patient_responsibility, 2)
-        total_savings = round(total_billed - total_patient_responsibility, 2)
+        # Verify aggregate financial conservation
+        aggregate_sum_d = total_primary_paid_d + total_secondary_paid_d + total_patient_responsibility_d + total_writeoff_d
+        if total_billed_d > Decimal("0.00") and aggregate_sum_d != total_billed_d:
+            raise ArithmeticError(
+                f"Financial conservation law violated on aggregate summary: "
+                f"primary_paid ({total_primary_paid_d}) + secondary_paid ({total_secondary_paid_d}) + "
+                f"patient_resp ({total_patient_responsibility_d}) + writeoff ({total_writeoff_d}) = {aggregate_sum_d} != billed ({total_billed_d})"
+            )
+
+        total_insurer_paid_d = total_primary_paid_d + total_secondary_paid_d
+        total_savings_d = total_billed_d - total_patient_responsibility_d
 
         # Assemble summary message
         primary_name = cob_decision.primary_provider or "Primary Insurer"
         secondary_name = cob_decision.secondary_provider or "Secondary Insurer"
         
         explanation = (
-            f"The total billed amount of ₹{total_billed:.2f} was coordinated across dual coverage. "
-            f"{primary_name} paid ₹{total_primary_paid:.2f}. "
+            f"The total billed amount of ₹{_f(total_billed_d):.2f} was coordinated across dual coverage. "
+            f"{primary_name} paid ₹{_f(total_primary_paid_d):.2f}. "
         )
         if cob_decision.secondary_policy_id:
-            explanation += f"{secondary_name} coordinated and paid ₹{total_secondary_paid:.2f}. "
+            explanation += f"{secondary_name} coordinated and paid ₹{_f(total_secondary_paid_d):.2f}. "
         
         explanation += (
-            f"The patient out-of-pocket responsibility is ₹{total_patient_responsibility:.2f}, "
-            f"comprising ₹{total_deductible_paid:.2f} towards deductibles and ₹{total_coinsurance_paid:.2f} towards coinsurance."
+            f"The patient out-of-pocket responsibility is ₹{_f(total_patient_responsibility_d):.2f}, "
+            f"comprising ₹{_f(total_deductible_paid_d):.2f} towards deductibles and ₹{_f(total_coinsurance_paid_d):.2f} towards coinsurance."
         )
 
         if denial_notes:
@@ -122,19 +149,19 @@ class FinanceEngine:
             explanation += " Denials/Exclusions: " + " ".join(unique_denials)
 
         patient_responsibility = PatientResponsibility(
-            total_deductible=total_deductible_paid,
-            total_coinsurance=total_coinsurance_paid,
-            total_responsibility=total_patient_responsibility,
+            total_deductible=_f(total_deductible_paid_d),
+            total_coinsurance=_f(total_coinsurance_paid_d),
+            total_responsibility=_f(total_patient_responsibility_d),
             explanation_notes=explanation,
         )
 
         summary = CostSummary(
-            total_billed=total_billed,
-            total_primary_paid=total_primary_paid,
-            total_secondary_paid=total_secondary_paid,
-            total_insurer_paid=total_insurer_paid,
-            total_patient_responsibility=total_patient_responsibility,
-            total_savings=total_savings,
+            total_billed=_f(total_billed_d),
+            total_primary_paid=_f(total_primary_paid_d),
+            total_secondary_paid=_f(total_secondary_paid_d),
+            total_insurer_paid=_f(total_insurer_paid_d),
+            total_patient_responsibility=_f(total_patient_responsibility_d),
+            total_savings=_f(total_savings_d),
         )
 
         breakdown = FinancialBreakdown(

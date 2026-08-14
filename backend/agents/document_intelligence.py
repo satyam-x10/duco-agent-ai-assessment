@@ -35,21 +35,24 @@ class DocIntelAgent(Agent):
                 import asyncio
                 from app.schemas.document_intelligence import ProcessedDocument
                 from app.schemas.intake import DocumentType
+                from services.document_facts import extract_document_facts
                 
                 await asyncio.sleep(0.8) # Simulate processing delay
                 
                 mock_texts = {
-                    DocumentType.PRIYA_PT_INVOICE: "Priya Sen physical therapy invoice. Patient underwent physical therapy sessions. CPT code 97161 (Physical Therapy Evaluation, Billed: 20000.00) and CPT code 97110 (Therapeutic Exercises, Billed: 10000.00).",
-                    DocumentType.AARAV_MRI_REPORT: "Aarav MRI report of lower extremity. Findings indicate tear of medial meniscus, ICD-10 diagnosis code M23.231. Procedure code CPT 73721 (MRI Joint Lower Extremity, Billed: 12000.00).",
-                    DocumentType.SURGEON_ESTIMATE: "Surgeon Fee Estimate for Priya Sen. CPT code 29881 (Arthroscopic Meniscectomy, Billed: 100000.00) and CPT code 29888 (ACL reconstruction, Billed: 350000.00). Diagnosis: Tear of medial meniscus (ICD-10 M23.231).",
-                    DocumentType.USER_QUERY_TRANSCRIPT: "Please coordinate benefits for patient Priya Sen, subscriber member ID 98765. She has primary insurance with BlueShield and secondary insurance with UnitedHealth."
+                    DocumentType.PRIYA_PT_INVOICE: "Patient Name: Priya Sen\nMember ID: 98765\nDiagnosis: M54.50\nCPT 97161 Physical Therapy Evaluation - INR 20000.00\nCPT 97110 Therapeutic Exercises - INR 10000.00\nTotal Billed: INR 30000.00",
+                    DocumentType.AARAV_MRI_REPORT: "Patient Name: Aarav Sen\nMember ID: 98765-02\nMRI right knee CPT 73721 - INR 12000.00\nFindings: medial meniscus tear M23.231. ACL is intact with no tear.",
+                    DocumentType.SURGEON_ESTIMATE: "Patient Name: Aarav Sen\nMember ID: 98765-02\nCPT 29881 Arthroscopic Meniscectomy - INR 100000.00\nCPT 29888 ACL reconstruction - INR 350000.00\nProposed pending MRI findings.",
+                    DocumentType.USER_QUERY_TRANSCRIPT: "Patient: Priya Sen\nSubscriber ID: 98765\nPlease coordinate benefits under BlueShield and UnitedHealth."
                 }
                 extracted_text = mock_texts.get(doc_type, "Mock document text.")
+                facts = extract_document_facts(extracted_text)
                 processed_doc = ProcessedDocument(
                     document_type=doc_type,
                     extracted_text=extracted_text,
                     page_count=1,
                     confidence=0.99,
+                    facts=facts,
                     metadata={
                         "parser": "MockProcessor",
                         "file_path": str(file_path),

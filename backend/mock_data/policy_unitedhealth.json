@@ -2,6 +2,9 @@
   "policy_id": "UH-990-GOLD",
   "provider_name": "UnitedHealth",
   "group_number": "UH990",
+  "policy_version": "2026.1-PROD",
+  "source_regulation": "NAIC Model COB Regulation #120; CMS-1500 Uniform Billing Guidelines; CPT 2026",
+  "effective_date": "2026-01-01",
   "deductible": {
     "individual": 80000.0,
     "family": 150000.0,
@@ -44,30 +47,63 @@
       "cpt_code": "97161",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Max 20 sessions per calendar year"
     },
     {
       "cpt_code": "97110",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Max 30 sessions per calendar year"
+    },
+    {
+      "cpt_code": "97140",
+      "is_covered": true,
+      "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
+      "limitations": "Manual therapy must be supported by the treatment record"
+    },
+    {
+      "cpt_code": "97112",
+      "is_covered": true,
+      "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
+      "limitations": "Neuromuscular re-education subject to therapy visit limits"
     },
     {
       "cpt_code": "73721",
       "is_covered": true,
       "requires_preauth": true,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Requires pre-authorization for MRI imaging"
     },
     {
       "cpt_code": "29881",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "No pre-authorization required for outpatient arthroscopic meniscus repair"
     },
     {
       "cpt_code": "29888",
       "is_covered": true,
       "requires_preauth": true,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Requires pre-authorization for ligament reconstruction"
     }
   ]

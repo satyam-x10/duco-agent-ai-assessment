@@ -1,0 +1,85 @@
+{
+  "dataset_version": "2026.1-prod",
+  "currency": "INR",
+  "documents": {
+    "priya_pt_invoice_sample.txt": {
+      "document_type": "priya_pt_invoice",
+      "patient_name": "Priya Sen",
+      "member_id": "98765",
+      "date_of_birth": "1985-04-12",
+      "document_date": "2026-06-18",
+      "diagnosis_codes": ["M54.50"],
+      "line_items": [
+        {"cpt_code": "97161", "billed_amount": 20000.0},
+        {"cpt_code": "97110", "billed_amount": 10000.0}
+      ]
+    },
+    "aarav_mri_report_sample.txt": {
+      "document_type": "aarav_mri_report",
+      "patient_name": "Aarav Sen",
+      "member_id": "98765-02",
+      "date_of_birth": "2012-05-14",
+      "document_date": "2026-06-19",
+      "diagnosis_codes": ["M23.231", "Z04.89"],
+      "line_items": [
+        {"cpt_code": "73721", "billed_amount": 12000.0}
+      ]
+    },
+    "aarav_surgeon_estimate_sample.txt": {
+      "document_type": "surgeon_estimate",
+      "patient_name": "Aarav Sen",
+      "member_id": "98765-02",
+      "date_of_birth": "2012-05-14",
+      "document_date": "2026-06-20",
+      "provider": {
+        "name": "Dr. Meera Shah, MD",
+        "npi": "1982736450",
+        "facility": "Summit Orthopaedic Clinic"
+      },
+      "line_items": [
+        {"cpt_code": "29881", "billed_amount": 100000.0},
+        {"cpt_code": "29888", "billed_amount": 350000.0}
+      ]
+    },
+    "aarav_mri_report.pdf": {
+      "document_type": "aarav_mri_report",
+      "patient_name": "Aarav Sen",
+      "member_id": "98765-02",
+      "date_of_birth": "2012-05-14",
+      "document_date": "2026-06-19",
+      "diagnosis_codes": ["S83.511A", "M23.231"]
+    },
+    "aarav_no_tear_negative.pdf": {
+      "document_type": "aarav_mri_report",
+      "patient_name": "John Doe",
+      "diagnosis_codes": ["Z04.89"]
+    },
+    "aarav_surgeon_estimate.png": {
+      "document_type": "surgeon_estimate",
+      "patient_name": "Aarav Sen",
+      "member_id": "98765-02",
+      "date_of_birth": "2012-05-14",
+      "document_date": "2026-06-20",
+      "provider": {
+        "name": "Dr. Meera Shah, MD",
+        "npi": "1982736450",
+        "facility": "Summit Orthopaedic Clinic"
+      },
+      "line_items": [
+        {"cpt_code": "29881", "billed_amount": 100000.0},
+        {"cpt_code": "29888", "billed_amount": 350000.0}
+      ]
+    },
+    "priya_pt_invoice.png": {
+      "document_type": "priya_pt_invoice",
+      "patient_name": "Priya Sen",
+      "total_billed": 30000.0,
+      "line_items": [
+        {"cpt_code": "97161", "billed_amount": 7500.0},
+        {"cpt_code": "97110", "billed_amount": 7500.0},
+        {"cpt_code": "97140", "billed_amount": 7500.0},
+        {"cpt_code": "97112", "billed_amount": 7500.0}
+      ]
+    }
+  }
+}

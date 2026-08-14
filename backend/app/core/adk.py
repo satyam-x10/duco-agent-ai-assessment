@@ -2,6 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Optional, Callable, Awaitable
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -9,10 +10,9 @@ from app.schemas.intake import DocumentType
 from app.schemas.document_intelligence import ProcessedDocument
 from app.schemas.medical_coding import CodingResult
 from app.schemas.insurance_engine import InsurancePolicy
-from app.schemas.cob_engine import COBDecision
+from app.schemas.cob_engine import COBDecision, ClaimLine
 from app.schemas.finance_engine import FinancialReport
-
-from pathlib import Path
+from workflows.cob_orchestrator_workflow import get_dual_coverage_workflow, DualCoverageWorkflowGraph
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,8 @@ class FatalBusinessError(Exception):
     pass
 
 
-# Error types that represent permanent business logic failures — never retry these.
-BUSINESS_ERROR_TYPES = (FatalBusinessError, RuntimeError)
+# Error types that represent permanent business logic failures — only non-retryable business logic halts.
+BUSINESS_ERROR_TYPES = (FatalBusinessError,)
 
 
 class TraceEntry(BaseModel):
@@ -56,16 +56,21 @@ class SharedWorkflowState(BaseModel):
     """The shared mutable workflow state passed between coordinated agents."""
     claim_id: str = Field(..., description="Claim ID associated with the run")
     member_id: str = Field(..., description="Member ID of the patient")
-    ocr_engine: str = Field("gemini", description="OCR engine choice for image/scanned PDF processing: library | gemini")
+    member_ids: List[str] = Field(default_factory=list, description="All patient member IDs resolved in a family workflow")
+    patient_name: Optional[str] = Field(None, description="Patient name if resolved")
+    ocr_engine: str = Field("gemini", description="OCR engine choice: library | gemini")
     mock_mode: bool = Field(False, description="Whether to run in mock mode bypassing Gemini API calls")
     processed_documents: Dict[DocumentType, ProcessedDocument] = Field(default_factory=dict, description="Extracted texts from document intelligence")
     ocr_strategies: Dict[DocumentType, str] = Field(default_factory=dict, description="Dynamic extraction strategies resolved for document types")
     coding_result: Optional[CodingResult] = Field(None, description="Extracted clinical diagnosis and procedure codes")
+    claim_lines: List[ClaimLine] = Field(default_factory=list, description="Source-grounded billed procedure charges")
     primary_policy: Optional[InsurancePolicy] = Field(None, description="Resolved primary policy details")
     secondary_policy: Optional[InsurancePolicy] = Field(None, description="Resolved secondary policy details")
     cob_decision: Optional[COBDecision] = Field(None, description="Adjudicated benefits order and coverage calculations")
     financial_report: Optional[FinancialReport] = Field(None, description="Audited payment allocations ledger")
+    audio_briefing: Optional[object] = Field(None, description="Patient audio summary briefing object")
     warnings: List[str] = Field(default_factory=list, description="Quality, low confidence, or structure audit warnings")
+    judge_feedback: List[str] = Field(default_factory=list, description="Reflection and clinician judge feedback history")
     trace: List[TraceEntry] = Field(default_factory=list, description="Sequence trace log details")
     errors: List[str] = Field(default_factory=list, description="Encountered execution exception details")
     workflow_status: str = Field("pending", description="Overall pipeline status: pending | running | success | failed")
@@ -73,6 +78,7 @@ class SharedWorkflowState(BaseModel):
     failure_reason: Optional[str] = Field(None, description="Human-readable reason for workflow failure")
     requires_human_approval: bool = Field(False, description="Flag indicating if the claim needs human auditor sign-off")
     human_approved: bool = Field(False, description="Whether the auditor has signed off on the claim")
+    artifacts_finalized: bool = Field(False, description="Whether artifacts are approved and finalized for export")
 
 
 class Agent(ABC):
@@ -93,6 +99,7 @@ class Orchestrator:
     def __init__(self, agents: List[Agent]):
         self.agents_list = agents
         self.agents_dict = {agent.name: agent for agent in agents}
+        self.workflow_graph: DualCoverageWorkflowGraph = get_dual_coverage_workflow()
         # Optional callback invoked after each agent completes successfully
         self._on_agent_complete: Optional[Callable[[str, int], Awaitable[None]]] = None
         # Optional callback invoked just before each agent starts executing
@@ -191,18 +198,7 @@ class Orchestrator:
                 )
                 cob_agent = self.agents_dict.get("COBAgent")
                 if cob_agent:
-                    from app.schemas.cob_engine import Claim, ClaimLine
-                    from agents.cob import CPT_BILLED_AMOUNTS
-                    claim_lines = []
-                    for procedure in state.coding_result.procedures:
-                        billed_amount = CPT_BILLED_AMOUNTS.get(procedure.code, 500.00)
-                        claim_lines.append(ClaimLine(cpt_code=procedure.code, billed_amount=billed_amount))
-                    claim = Claim(
-                        claim_id=f"CLAIM-{state.claim_id}",
-                        member_id=state.member_id,
-                        lines=claim_lines
-                    )
-                    state.cob_decision = cob_agent.cob_engine.coordinate_benefits(claim)
+                    cob_agent.coordinate_state(state)
                 completed_agents.add("COBAgent")
             else:
                 return "COBAgent", "Insurance policies resolved. COBAgent is selected to evaluate Coordination of Benefits rules and assign primary/secondary payer order."
@@ -438,7 +434,18 @@ class Orchestrator:
                             raise RuntimeError(fatal_msg) from e
 
             if state.workflow_status == "running":
-                state.workflow_status = "success"
+                if step_count >= max_steps:
+                    state.workflow_status = "failed"
+                    state.failure_reason = f"Planner exceeded maximum allowable step limit ({max_steps} iterations) without convergence."
+                    state.trace.append(
+                        TraceEntry(
+                            agent_name="Orchestrator",
+                            status="error",
+                            message=state.failure_reason,
+                        )
+                    )
+                else:
+                    state.workflow_status = "success"
             append_realtime_log(f"--- ORCHESTRATION PIPELINE COMPLETED (Status: {state.workflow_status}) ---")
         else:
             # Fallback for custom test sequences

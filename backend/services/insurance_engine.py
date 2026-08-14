@@ -26,6 +26,8 @@ class InsuranceService:
             self.mock_data_dir = Path(mock_data_dir)
 
         self._policies: Dict[str, InsurancePolicy] = {}
+        self._member_accumulators: Dict[str, Dict[str, float]] = {}
+        self._family_deductibles: Dict[str, float] = {}
         self.load_policies()
 
     def load_policies(self) -> None:
@@ -44,6 +46,12 @@ class InsuranceService:
                 if "policy_id" in data and "provider_name" in data:
                     policy = InsurancePolicy(**data)
                     self._policies[policy.policy_id] = policy
+                    self._family_deductibles[policy.policy_id] = policy.deductible.remaining_family
+                    for member in policy.members:
+                        self._member_accumulators[f"{policy.policy_id}:{member.member_id}"] = {
+                            "remaining_individual_deductible": policy.deductible.remaining_individual,
+                            "remaining_out_of_pocket_max": policy.remaining_out_of_pocket_max,
+                        }
                     logger.info(f"Successfully loaded policy: {policy.provider_name} ({policy.policy_id})")
             except Exception as e:
                 logger.error(f"Failed to load policy file {file_path}: {e}")
@@ -70,6 +78,60 @@ class InsuranceService:
         if member:
             return member.role
         return None
+
+    def get_policies_for_member(self, patient_member: Member) -> List[InsurancePolicy]:
+        """Return deep-copied policies matching the same person across payers."""
+        matches = []
+        for policy in self._policies.values():
+            if any(
+                member.first_name.lower() == patient_member.first_name.lower()
+                and member.last_name.lower() == patient_member.last_name.lower()
+                and member.date_of_birth == patient_member.date_of_birth
+                for member in policy.members
+            ):
+                matches.append(policy.model_copy(deep=True))
+        return matches
+
+    def get_accumulator(self, policy: InsurancePolicy, member_id: str) -> Dict[str, float]:
+        """Return a copy of the durable per-member accumulator for one policy."""
+        key = f"{policy.policy_id}:{member_id}"
+        if key not in self._member_accumulators:
+            self._member_accumulators[key] = {
+                "remaining_individual_deductible": policy.deductible.remaining_individual,
+                "remaining_out_of_pocket_max": policy.remaining_out_of_pocket_max,
+            }
+        return dict(self._member_accumulators[key])
+
+    def update_accumulator(
+        self,
+        policy: InsurancePolicy,
+        member_id: str,
+        *,
+        remaining_individual_deductible: float,
+        remaining_family_deductible: float,
+        remaining_out_of_pocket_max: float,
+    ) -> None:
+        """Commit adjudicated accumulator balances after each claim line."""
+        key = f"{policy.policy_id}:{member_id}"
+        self._member_accumulators[key] = {
+            "remaining_individual_deductible": remaining_individual_deductible,
+            "remaining_out_of_pocket_max": remaining_out_of_pocket_max,
+        }
+        self._family_deductibles[policy.policy_id] = remaining_family_deductible
+
+        # Keep legacy policy fields synchronized for API compatibility. The
+        # member accumulator above remains the authoritative balance.
+        if policy.policy_id in self._policies:
+            stored = self._policies[policy.policy_id]
+            stored.deductible.remaining_individual = remaining_individual_deductible
+            stored.deductible.remaining_family = remaining_family_deductible
+            stored.remaining_out_of_pocket_max = remaining_out_of_pocket_max
+
+    @staticmethod
+    def get_coverage_rule(policy: InsurancePolicy, cpt_code: str) -> Optional[CoverageRule]:
+        if not policy:
+            return None
+        return next((rule for rule in policy.coverage_rules if rule.cpt_code == cpt_code), None)
 
     def is_procedure_covered(self, member_id: str, cpt_code: str) -> bool:
         """Determines if a procedure is covered under the member's active policy."""

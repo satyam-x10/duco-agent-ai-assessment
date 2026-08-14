@@ -72,6 +72,7 @@ def test_coordinate_benefits_priya_pt(cob_engine):
         claim_id="CLAIM-100",
         member_id="98765",
         lines=[ClaimLine(cpt_code="97161", billed_amount=20000.0)],
+        diagnoses=["M54.50"],
     )
 
     decision = engine.coordinate_benefits(claim)
@@ -142,7 +143,7 @@ def test_coordinate_benefits_custom_not_covered():
             Member(member_id="MEM-001", first_name="Jane", last_name="Doe", role="subscriber", relationship_to_subscriber="self", date_of_birth="1990-01-01")
         ],
         coverage_rules=[
-            CoverageRule(cpt_code="99999", is_covered=False, requires_preauth=False)
+            CoverageRule(cpt_code="97161", is_covered=False, requires_preauth=False)
         ]
     )
 
@@ -159,7 +160,7 @@ def test_coordinate_benefits_custom_not_covered():
             Member(member_id="MEM-002", first_name="Jane", last_name="Doe", role="dependent", relationship_to_subscriber="spouse", date_of_birth="1990-01-01")
         ],
         coverage_rules=[
-            CoverageRule(cpt_code="99999", is_covered=True, requires_preauth=False)
+            CoverageRule(cpt_code="97161", is_covered=True, requires_preauth=False)
         ]
     )
 
@@ -171,7 +172,8 @@ def test_coordinate_benefits_custom_not_covered():
     claim = Claim(
         claim_id="CLAIM-200",
         member_id="MEM-001",
-        lines=[ClaimLine(cpt_code="99999", billed_amount=20000.0)],
+        lines=[ClaimLine(cpt_code="97161", billed_amount=20000.0)],
+        diagnoses=["M54.50"],
     )
 
     decision = engine.coordinate_benefits(claim)

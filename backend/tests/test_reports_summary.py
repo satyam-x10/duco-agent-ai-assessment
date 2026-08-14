@@ -20,6 +20,7 @@ def test_reports_summary_fallback(client):
     
     state = SharedWorkflowState(claim_id="CLAIM-MOCK", member_id="98765")
     state.workflow_status = "success"
+    state.artifacts_finalized = True
     from app.schemas.medical_coding import Procedure, Diagnosis
     from app.schemas.insurance_engine import CoverageRule
     state.coding_result = CodingResult(
@@ -133,13 +134,7 @@ def test_reports_summary_fallback(client):
         
     # Validate preauth letters
     letters = data["letters"]
-    assert len(letters) > 0
-    for letter in letters:
-        assert "insurer_name" in letter
-        assert "policy_id" in letter
-        assert "patient_name" in letter
-        assert "letter_content" in letter
-        assert "generated_at" in letter
+    assert letters == []  # No grounded claim line was supplied in this summary fixture.
 
 
 def test_analysis_history(client):

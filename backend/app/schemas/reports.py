@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from app.schemas.medical_coding import CodingResult
 from app.schemas.preauth import PreAuthLetter
 from app.schemas.audio import AudioBriefing
+from app.schemas.cob_engine import PatientClaimSummary
 
 
 class FinancialSummary(BaseModel):
@@ -12,6 +13,8 @@ class FinancialSummary(BaseModel):
     primary_paid: float = Field(..., description="Amount covered by the primary insurance plan")
     secondary_paid: float = Field(..., description="Amount covered by the secondary insurance plan")
     patient_responsibility: float = Field(..., description="The remaining net patient out-of-pocket amount")
+    primary_provider: Optional[str] = Field(None, description="Resolved primary payer name")
+    secondary_provider: Optional[str] = Field(None, description="Resolved secondary payer name")
     currency: str = Field("INR", description="Currency format tag")
 
 
@@ -46,6 +49,9 @@ class ClaimLineCoverageSchema(BaseModel):
     """
     cpt_code: str = Field(..., description="CPT procedure code")
     description: str = Field("", description="Medical description of the procedure")
+    patient_name: Optional[str] = Field(None, description="Patient receiving the service")
+    member_id: Optional[str] = Field(None, description="Member identifier used for adjudication")
+    source_document: Optional[str] = Field(None, description="Document grounding the billed amount")
     billed_amount: float = Field(..., description="Original billed charge for this procedure")
     is_primary_covered: bool = Field(..., description="Whether the primary insurer covers this CPT code")
     primary_deductible: float = Field(0.0, description="Primary deductible applied to this line")
@@ -79,6 +85,7 @@ class ReportSummaryResponse(BaseModel):
     
     # Per-procedure coverage decisions — shows exactly why each CPT was covered or denied
     cob_lines: List[ClaimLineCoverageSchema] = Field(default_factory=list, description="Per-procedure coverage decision breakdown from the COB engine")
+    patient_claims: List[PatientClaimSummary] = Field(default_factory=list, description="Patient-specific financial and payer summaries")
 
 
 

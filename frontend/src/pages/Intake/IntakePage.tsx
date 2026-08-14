@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/layout/PageContainer';
@@ -45,48 +45,13 @@ export const IntakePage: React.FC = () => {
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [failedAgent, setFailedAgent] = useState<string | null>(null);
     const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
-    const [mockMode, setMockMode] = useState(true);
+    const [mockMode, setMockMode] = useState(false);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [currentAgent, setCurrentAgent] = useState<string | null>(null);
     const [agentFeed, setAgentFeed] = useState<AgentFeedEntry[]>([]);
     const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
     const feedBottomRef = useRef<HTMLDivElement>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    // Fetch existing uploads or resume a job if job_id is passed in the URL query params
-    useEffect(() => {
-        const queryParams = new URLSearchParams(window.location.search);
-        const jobIdParam = queryParams.get('job_id');
-        
-        if (jobIdParam) {
-            ApiService.getAnalysisStatus(jobIdParam).then(job => {
-                setActiveJobId(job.job_id);
-                setProgress(job.progress_percent);
-                setPhaseMessage(job.message);
-                setReviewWarnings(job.warnings || []);
-                setErrorMessage(job.error_details || null);
-                
-                let nextStatus: 'idle' | 'starting' | 'processing' | 'awaiting_approval' | 'completed' | 'failed' = 'idle';
-                if (job.status === 'pending') nextStatus = 'starting';
-                else if (job.status === 'processing') nextStatus = 'processing';
-                else if (job.status === 'awaiting_approval') nextStatus = 'awaiting_approval';
-                else if (job.status === 'completed') nextStatus = 'completed';
-                else if (job.status === 'failed') nextStatus = 'failed';
-                
-                setAnalysisStatus(nextStatus);
-                
-                if (job.status === 'processing' || job.status === 'pending') {
-                    if (intervalRef.current) clearInterval(intervalRef.current);
-                    intervalRef.current = buildPollingLoop(job.job_id, new Set<string>());
-                }
-            }).catch(() => {
-                // Fallback to standard status load if job_id fetch fails
-                ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
-            });
-        } else {
-            ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
-        }
-    }, []);
 
     // Auto-scroll agent feed
     useEffect(() => {
@@ -111,14 +76,14 @@ export const IntakePage: React.FC = () => {
         try { await ApiService.deleteDocument(slotId); } catch { /* silent */ }
     };
 
-    const addFeedEntry = (entry: AgentFeedEntry) => {
+    const addFeedEntry = useCallback((entry: AgentFeedEntry) => {
         setAgentFeed(prev => {
             const filtered = prev.filter(e => !(e.agentName === entry.agentName && e.status === 'running'));
             return [...filtered, entry];
         });
-    };
+    }, []);
 
-    const buildPollingLoop = (job_id: string, seenAgents: Set<string>) => {
+    const buildPollingLoop = useCallback((job_id: string, seenAgents: Set<string>) => {
         return setInterval(async () => {
             try {
                 const res = await ApiService.getAnalysisStatus(job_id);
@@ -162,7 +127,41 @@ export const IntakePage: React.FC = () => {
                 setErrorMessage('Lost connection to backend while polling. Please retry.');
             }
         }, 1200);
-    };
+    }, [addFeedEntry, navigate]);
+
+    // Fetch existing uploads or resume a job if job_id is passed in the URL query params
+    useEffect(() => {
+        const queryParams = new URLSearchParams(window.location.search);
+        const jobIdParam = queryParams.get('job_id');
+
+        if (jobIdParam) {
+            ApiService.getAnalysisStatus(jobIdParam).then(job => {
+                setActiveJobId(job.job_id);
+                setProgress(job.progress_percent);
+                setPhaseMessage(job.message);
+                setReviewWarnings(job.warnings || []);
+                setErrorMessage(job.error_details || null);
+
+                let nextStatus: 'idle' | 'starting' | 'processing' | 'awaiting_approval' | 'completed' | 'failed' = 'idle';
+                if (job.status === 'pending') nextStatus = 'starting';
+                else if (job.status === 'processing') nextStatus = 'processing';
+                else if (job.status === 'awaiting_approval') nextStatus = 'awaiting_approval';
+                else if (job.status === 'completed') nextStatus = 'completed';
+                else if (job.status === 'failed') nextStatus = 'failed';
+
+                setAnalysisStatus(nextStatus);
+
+                if (job.status === 'processing' || job.status === 'pending') {
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                    intervalRef.current = buildPollingLoop(job.job_id, new Set<string>());
+                }
+            }).catch(() => {
+                ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
+            });
+        } else {
+            ApiService.fetchIntakeStatus().then(setUploadedFiles).catch(() => { });
+        }
+    }, [buildPollingLoop]);
 
     const startAssessment = async () => {
         setAnalysisStatus('starting');

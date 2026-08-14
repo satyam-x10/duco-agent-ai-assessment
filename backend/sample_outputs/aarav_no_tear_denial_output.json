@@ -1,0 +1,106 @@
+{
+  "claim_id": "CLAIM-DENIAL-01",
+  "patient_name": "Aarav Sen",
+  "primary_policy": "BS-120-BLUE",
+  "adjudication_status": "DENIED_MEDICAL_NECESSITY",
+  "cob_decision": {
+    "claim_id": "CLAIM-DENIAL-01",
+    "patient_name": "Aarav Sen",
+    "primary_policy_id": "BS-120-BLUE",
+    "primary_provider": "BlueShield Cross",
+    "secondary_policy_id": null,
+    "secondary_provider": null,
+    "lines_coverage": [
+      {
+        "cpt_code": "29888",
+        "billed_amount": 350000.0,
+        "member_id": "98765-02",
+        "patient_name": "Aarav Sen",
+        "source_document": "aarav_no_tear_negative.pdf",
+        "primary_coverage": {
+          "policy_id": "BS-120-BLUE",
+          "is_covered": false,
+          "allowed_amount": null,
+          "contractual_writeoff": 0.0,
+          "copay_applied": 0.0,
+          "deductible_applied": 0.0,
+          "coinsurance_rate": 0.0,
+          "coinsurance_amount": 0.0,
+          "primary_paid": 0.0,
+          "patient_responsibility": 350000.0
+        },
+        "secondary_coverage": {
+          "policy_id": "",
+          "is_covered": false,
+          "allowed_amount": null,
+          "copay_applied": 0.0,
+          "deductible_applied": 0.0,
+          "coinsurance_rate": 0.0,
+          "coinsurance_amount": 0.0,
+          "secondary_paid": 0.0,
+          "patient_responsibility": 350000.0
+        },
+        "remaining_balance": {
+          "billed_amount": 350000.0,
+          "primary_paid": 0.0,
+          "secondary_paid": 0.0,
+          "patient_responsibility": 350000.0,
+          "notes": "CPT 29888 is not medically necessary under the mock rule because it lacks a supporting diagnosis. Expected one of: S83.51 (catalog 2026.1-demo).",
+          "is_satisfied": true
+        }
+      }
+    ],
+    "total_billed": 350000.0,
+    "total_primary_paid": 0.0,
+    "total_secondary_paid": 0.0,
+    "total_patient_responsibility": 350000.0,
+    "patient_claims": [
+      {
+        "member_id": "98765-02",
+        "patient_name": "Aarav Sen",
+        "primary_policy_id": "BS-120-BLUE",
+        "secondary_policy_id": null,
+        "total_billed": 350000.0,
+        "total_primary_paid": 0.0,
+        "total_secondary_paid": 0.0,
+        "total_patient_responsibility": 350000.0
+      }
+    ],
+    "is_fully_adjudicated": true
+  },
+  "financial_breakdown": {
+    "report_id": "FIN-REPORT-08027578",
+    "claim_id": "CLAIM-DENIAL-01",
+    "patient_name": "Aarav Sen",
+    "generated_at": "2026-08-14T10:06:25.938205Z",
+    "primary_policy_id": "BS-120-BLUE",
+    "secondary_policy_id": null,
+    "breakdown": {
+      "allocations": [
+        {
+          "cpt_code": "29888",
+          "billed_amount": 350000.0,
+          "primary_paid": 0.0,
+          "secondary_paid": 0.0,
+          "patient_deductible_applied": 0.0,
+          "patient_coinsurance_applied": 350000.0,
+          "patient_responsibility": 350000.0
+        }
+      ],
+      "patient_responsibility": {
+        "total_deductible": 0.0,
+        "total_coinsurance": 350000.0,
+        "total_responsibility": 350000.0,
+        "explanation_notes": "The total billed amount of \u20b9350000.00 was coordinated across dual coverage. BlueShield Cross paid \u20b90.00. The patient out-of-pocket responsibility is \u20b9350000.00, comprising \u20b90.00 towards deductibles and \u20b9350000.00 towards coinsurance. Denials/Exclusions: CPT 29888 is not medically necessary under the mock rule because it lacks a supporting diagnosis. Expected one of: S83.51 (catalog 2026.1-demo)."
+      },
+      "summary": {
+        "total_billed": 350000.0,
+        "total_primary_paid": 0.0,
+        "total_secondary_paid": 0.0,
+        "total_insurer_paid": 0.0,
+        "total_patient_responsibility": 350000.0,
+        "total_savings": 0.0
+      }
+    }
+  }
+}

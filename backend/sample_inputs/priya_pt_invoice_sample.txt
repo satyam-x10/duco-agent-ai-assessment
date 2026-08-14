@@ -1,0 +1,17 @@
+SUMMIT PHYSICAL THERAPY CLINIC
+INVOICE & CLINICAL ENCOUNTER SUMMARY
+Date: 2026-06-18
+Patient Name: Priya Sen
+DOB: 1985-04-12
+Member ID: 98765
+Primary Payer: BlueShield Cross (BS-120-BLUE)
+
+Clinical Assessment:
+Patient presents with lumbar strain and low back pain (ICD-10: M54.50). Completed physical therapy functional evaluation and therapeutic exercises.
+
+Itemized Services:
+- CPT 97161: Physical Therapy Evaluation (Low Complexity) - INR 20000.00
+- CPT 97110: Therapeutic Exercise (15 min) - INR 10000.00
+
+Total Billed: INR 30000.00
+Provider: Summit Physical Therapy Clinic

@@ -2,7 +2,7 @@ import asyncio
 import uuid
 import logging
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, status, HTTPException
 from app.schemas.analysis import (
     AnalysisStartRequest,
@@ -86,7 +86,15 @@ async def get_analysis_status(jobId: str):
     )
 
 
-async def _run_orchestration(job_id: str) -> None:
+def _finalize_artifacts(state) -> None:
+    """Build deterministic final artifacts only after required approval."""
+    from app.dependencies.audio import get_audio_briefing_service
+
+    state.audio_briefing = get_audio_briefing_service().generate_briefing(state).briefing
+    state.artifacts_finalized = True
+
+
+async def _run_orchestration(job_id: str, existing_state=None) -> None:
     """
     Background task that runs the full multi-agent orchestration pipeline.
     Updates jobs_db[job_id] in real-time as agents complete.
@@ -100,14 +108,16 @@ async def _run_orchestration(job_id: str) -> None:
     if not job:
         return
 
-    # Clear the realtime trace log at the start of a new run
-    from app.core.adk import clear_realtime_log
-    clear_realtime_log()
+    if existing_state is None:
+        # Clear the realtime trace log only for a new run, not a clinician
+        # correction pass whose earlier evidence must remain auditable.
+        from app.core.adk import clear_realtime_log
+        clear_realtime_log()
 
     phase_messages = {
         "IntakeAgent": "IntakeAgent: Validated documents in storage slots.",
         "DocIntelAgent": "DocIntelAgent: Extracted text from all uploaded documents.",
-        "MedicalCodingAgent": "MedicalCodingAgent: Gemini inferred ICD-10 and CPT codes.",
+        "MedicalCodingAgent": "MedicalCodingAgent: Extracted or inferred ICD-10 and CPT codes with evidence.",
         "InsuranceAgent": "InsuranceAgent: Resolved insurance policies for patient.",
         "COBAgent": "COBAgent: Coordinated benefits across primary and secondary plans.",
         "FinanceAgent": "FinanceAgent: Generated audited financial breakdown report.",
@@ -142,19 +152,20 @@ async def _run_orchestration(job_id: str) -> None:
         logger.info(f"[Job {job_id}] {agent_name} starting...")
 
     try:
-        # Determine which member to use based on uploaded documents
-        storage_service = get_storage_service()
-        status_map = await storage_service.get_status()
-
-        # Default to Priya Sen (BlueShield subscriber: 98765).
-        # Her member ID exists in policy_blueshield.json and the InsuranceAgent
-        # resolves cross-plan coverage by name match across all loaded policies.
-        member_id = "98765"
+        # Patient identities are resolved from structured document facts by the
+        # InsuranceAgent. This sentinel is never used for adjudication.
+        member_id = "UNRESOLVED"
 
         ocr_engine = job.get("ocr_engine", "library")
         mock_mode = job.get("mock_mode", False)
         claim_id = f"CLAIM-{job_id[:8].upper()}"
-        state = SharedWorkflowState(claim_id=claim_id, member_id=member_id, ocr_engine=ocr_engine, mock_mode=mock_mode)
+        state = existing_state or SharedWorkflowState(
+            claim_id=claim_id,
+            member_id=member_id,
+            ocr_engine=ocr_engine,
+            mock_mode=mock_mode,
+        )
+        state.artifacts_finalized = False
 
         orchestrator = get_orchestrator()
         orchestrator.set_progress_callback(on_agent_complete)
@@ -171,6 +182,7 @@ async def _run_orchestration(job_id: str) -> None:
             job["state"] = state
             logger.info(f"[Job {job_id}] Orchestration finished. Awaiting clinician approval.")
         else:
+            _finalize_artifacts(state)
             job["status"] = JobStatus.COMPLETED
             job["progress_percent"] = 100
             job["message"] = "Pipeline completed successfully. Pre-authorization letters and reports are ready."
@@ -237,6 +249,7 @@ async def approve_analysis(job_id: str):
             message="Manual clinician audit approval signed off. Proceeding to finalize benefits."
         )
     )
+    _finalize_artifacts(state)
     
     job["status"] = JobStatus.COMPLETED
     job["progress_percent"] = 100
@@ -247,7 +260,7 @@ async def approve_analysis(job_id: str):
 
 
 @router.post("/reject")
-async def reject_analysis(job_id: str):
+async def reject_analysis(job_id: str, feedback: Optional[str] = None):
     """
     Rejects the medical coding outputs and triggers a self-correction re-run.
     """
@@ -274,6 +287,7 @@ async def reject_analysis(job_id: str):
     from app.core.adk import TraceEntry
     state.human_approved = False
     state.requires_human_approval = False
+    state.artifacts_finalized = False
     state.trace.append(
         TraceEntry(
             agent_name="ClinicianAuditor",
@@ -283,9 +297,9 @@ async def reject_analysis(job_id: str):
     )
     
     # Add clinician audit rejection notes to warnings to drive the reflection prompt
+    correction = feedback or "Re-check every diagnosis and procedure against the uploaded source evidence."
     state.warnings.append(
-        "Clinician Auditor explicitly rejected prior extraction: Low confidence diagnosis or procedure codes. "
-        "Please double check the text for Meniscectomy, MRI, or ACL reconstruction and confirm they are explicitly documented."
+        f"Clinician Auditor rejected the prior extraction (Low confidence correction request): {correction}"
     )
             
     job["status"] = JobStatus.PROCESSING
@@ -293,7 +307,7 @@ async def reject_analysis(job_id: str):
     job["message"] = "Re-analyzing claim with clinician feedback..."
     
     # Relaunch the pipeline
-    asyncio.create_task(_run_orchestration(job_id))
+    asyncio.create_task(_run_orchestration(job_id, existing_state=state))
     
     return {"status": "success", "message": "Job rejected and re-running."}
 

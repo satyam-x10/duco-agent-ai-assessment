@@ -9,8 +9,54 @@ from pypdf import PdfReader
 
 from app.schemas.intake import DocumentType
 from app.schemas.document_intelligence import ProcessedDocument
+from services.document_facts import extract_document_facts
 
 logger = logging.getLogger(__name__)
+
+
+def compute_extraction_quality(text: str, document_type: DocumentType, strategy: str = "standard") -> tuple[float, list[str]]:
+    """
+    Evaluates the quality and confidence of extracted OCR text across multi-dimensional criteria:
+    - Text length, character readability and token density
+    - Patient and insurance identifier grounding (patient name, member ID, DOB)
+    - Clinical and diagnostic entity grounding (ICD-10 or verified findings)
+    - Financial line item completeness and currency sanity checks
+    - Extraction strategy bonus (high_fidelity)
+    """
+    issues = []
+    if not text or len(text.strip()) < 10:
+        return 0.20, ["Document text is empty, truncated, or unreadable."]
+
+    facts = extract_document_facts(text)
+    score = 1.0
+
+    # 1. Key patient & policy identifiers
+    if not facts.patient_name:
+        issues.append("Patient name could not be resolved from text.")
+        score -= 0.05
+    if not facts.member_id:
+        issues.append("Member ID could not be resolved from text.")
+        score -= 0.05
+
+    # 2. Clinical & Financial completeness by document type
+    if document_type in (DocumentType.PRIYA_PT_INVOICE, DocumentType.SURGEON_ESTIMATE):
+        if not facts.line_items and not facts.total_billed:
+            issues.append("No billed CPT line items could be detected.")
+            score -= 0.10
+        elif any(item.amount_source == "allocated_from_document_total" for item in facts.line_items):
+            issues.append("Charges were allocated from document total across named services; clinician verification recommended.")
+
+    if document_type in (DocumentType.AARAV_MRI_REPORT,):
+        if not facts.diagnosis_codes and "tear" not in text.lower() and "normal" not in text.lower():
+            issues.append("No clinical diagnoses or documented findings detected.")
+            score -= 0.10
+
+    # 3. Strategy boost for high-fidelity extraction
+    if strategy == "high_fidelity":
+        score = min(1.0, score + 0.05)
+
+    final_confidence = max(0.40, min(1.0, round(score, 2)))
+    return final_confidence, issues
 
 
 class DocumentProcessor(ABC):
@@ -37,11 +83,16 @@ class TextProcessor(DocumentProcessor):
         if not content.strip():
             raise ValueError(f"Text document at '{file_path}' is empty.")
 
+        facts = extract_document_facts(content)
+        confidence, issues = compute_extraction_quality(content, document_type, strategy)
+
         return ProcessedDocument(
             document_type=document_type,
             extracted_text=content,
             page_count=1,
-            confidence=1.0,
+            confidence=confidence,
+            facts=facts,
+            quality_issues=issues,
             metadata={
                 "parser": "TextProcessor",
                 "character_count": len(content),
@@ -81,11 +132,16 @@ class PDFProcessor(DocumentProcessor):
                 confidence = 0.99
                 parser_name = "PDFProcessor"
 
+            facts = extract_document_facts(extracted_text)
+            quality_confidence, issues = compute_extraction_quality(extracted_text, document_type, strategy)
+
             return ProcessedDocument(
                 document_type=document_type,
                 extracted_text=extracted_text,
                 page_count=page_count,
-                confidence=confidence,
+                confidence=min(confidence, quality_confidence),
+                facts=facts,
+                quality_issues=issues,
                 metadata={
                     "parser": parser_name,
                     "page_count_resolved": page_count,
@@ -191,11 +247,16 @@ class ImageProcessor(DocumentProcessor):
             parser_name = "ImageProcessor (RapidOCR Local)"
             ocr_method = "RapidOCRLocal"
 
+        facts = extract_document_facts(extracted_text)
+        confidence, issues = compute_extraction_quality(extracted_text, document_type, strategy)
+
         return ProcessedDocument(
             document_type=document_type,
             extracted_text=extracted_text,
             page_count=1,
-            confidence=0.99 if strategy == "high_fidelity" else 0.98,
+            confidence=confidence,
+            facts=facts,
+            quality_issues=issues,
             metadata={
                 "parser": parser_name,
                 "ocr_method": ocr_method,

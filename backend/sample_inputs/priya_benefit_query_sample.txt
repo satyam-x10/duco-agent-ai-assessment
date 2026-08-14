@@ -1,0 +1,4 @@
+PATIENT TRANSCRIPT & BENEFIT COORDINATION QUERY
+Patient: Priya Sen
+Subscriber ID: 98765
+Query: Please check if my primary insurance (BlueShield Cross) and secondary insurance through my spouse Dev Sen (UnitedHealth UH-990-GOLD) cover physical therapy for my lower back and knee arthroscopy for my son Aarav Sen.

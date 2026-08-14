@@ -1,0 +1,47 @@
+{
+  "version": "2026.1-demo",
+  "source": "Synthetic clinical coding and medical necessity rule catalog",
+  "cpt": {
+    "97161": {
+      "description": "Physical therapy evaluation, low complexity",
+      "category": "physical_therapy",
+      "supporting_diagnosis_prefixes": ["M54", "M25", "S83", "M23"]
+    },
+    "97110": {
+      "description": "Therapeutic exercises",
+      "category": "physical_therapy",
+      "supporting_diagnosis_prefixes": ["M54", "M25", "S83", "M23"]
+    },
+    "97140": {
+      "description": "Manual therapy techniques",
+      "category": "physical_therapy",
+      "supporting_diagnosis_prefixes": ["M54", "M25", "S83", "M23"]
+    },
+    "97112": {
+      "description": "Neuromuscular re-education",
+      "category": "physical_therapy",
+      "supporting_diagnosis_prefixes": ["M54", "M25", "S83", "M23"]
+    },
+    "73721": {
+      "description": "MRI lower extremity joint without contrast",
+      "category": "diagnostic_imaging",
+      "supporting_diagnosis_prefixes": ["M25", "S83", "M23", "Z04"]
+    },
+    "29881": {
+      "description": "Arthroscopy, knee, surgical; with meniscectomy",
+      "category": "surgery",
+      "supporting_diagnosis_prefixes": ["M23.2", "S83.2"]
+    },
+    "29888": {
+      "description": "Arthroscopically aided ACL repair/augmentation or reconstruction",
+      "category": "surgery",
+      "supporting_diagnosis_prefixes": ["S83.51"]
+    }
+  },
+  "icd10": {
+    "M54.50": {"description": "Low back pain, unspecified"},
+    "M23.231": {"description": "Derangement of posterior horn of medial meniscus, right knee"},
+    "S83.511A": {"description": "Sprain of anterior cruciate ligament of right knee, initial encounter"},
+    "Z04.89": {"description": "Encounter for examination and observation for other reasons"}
+  }
+}

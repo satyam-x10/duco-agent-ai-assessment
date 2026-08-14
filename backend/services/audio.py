@@ -15,18 +15,20 @@ class AudioBriefingService:
     def generate_briefing(self, state: SharedWorkflowState) -> AudioResponse:
         logger.info(f"Generating patient audio briefing summary narration for claim {state.claim_id}")
 
-        # 1. Resolve Patient Name
-        patient_name = "Patient"
-        if state.financial_report and state.financial_report.patient_name:
+        # 1. Resolve Patient Name dynamically
+        patient_name = state.patient_name
+        if not patient_name and state.financial_report and state.financial_report.patient_name:
             patient_name = state.financial_report.patient_name
-        elif state.cob_decision and state.cob_decision.patient_name:
+        elif not patient_name and state.cob_decision and state.cob_decision.patient_name:
             patient_name = state.cob_decision.patient_name
-        elif state.member_id == "98765":
-            patient_name = "Priya Sen"
-        elif state.member_id == "54321":
-            patient_name = "Aarav Sen"
+        elif not patient_name and state.primary_policy:
+            matching = next((m for m in state.primary_policy.members if m.member_id == state.member_id), None)
+            if matching:
+                patient_name = f"{matching.first_name} {matching.last_name}"
+        if not patient_name:
+            patient_name = "Patient"
 
-        first_name = patient_name.split()[0] if patient_name else "there"
+        first_name = patient_name.split()[0] if " & " not in patient_name and patient_name != "Patient" else "there"
 
         # 2. Section: Greeting
         greeting_text = f"Hello {first_name}."
@@ -52,10 +54,10 @@ class AudioBriefingService:
         else:
             docs_joined = doc_names[0]
 
-        findings_narrative = "which outline the medical services and treatments received for your knee care."
+        findings_narrative = "which document the services and clinical information used in this estimate."
         if state.coding_result and state.coding_result.diagnoses:
             primary_diag = state.coding_result.diagnoses[0].description.lower()
-            findings_narrative = f"which confirm the clinical diagnosis of {primary_diag}."
+            findings_narrative = f"which include the documented diagnosis {primary_diag}."
 
         summary_text = (
             f"We have completed the analysis of {docs_joined}, {findings_narrative} "
@@ -74,7 +76,7 @@ class AudioBriefingService:
             insurance_text = (
                 f"We identified {primary_insurer} as your primary insurance provider, "
                 f"and {secondary_insurer} as your secondary insurance provider. "
-                "Both plans were coordinated to maximize your coverage and reduce your final bill."
+                "The plans were applied in the payer order shown in the claim breakdown."
             )
         elif state.primary_policy:
             insurance_text = (
@@ -103,12 +105,15 @@ class AudioBriefingService:
 
         financial_text = (
             f"The total billed amount from your provider is {total_billed:.2f} rupees. "
-            f"Your primary insurance is expected to cover {primary_paid:.2f} rupees, "
+            f"The current estimate assigns {primary_paid:.2f} rupees to the primary insurer, "
         )
         if secondary_paid > 0:
-            financial_text += f"and your secondary insurance is expected to coordinate an additional payment of {secondary_paid:.2f} rupees. "
+            financial_text += f"and {secondary_paid:.2f} rupees to the secondary insurer. "
         
-        financial_text += f"This leaves you with an estimated personal responsibility of {patient_responsibility:.2f} rupees."
+        financial_text += (
+            f"This leaves an estimated patient responsibility of {patient_responsibility:.2f} rupees. "
+            "These are estimates based on the uploaded documents and synthetic plan rules; the insurer's explanation of benefits is authoritative."
+        )
 
         # Add details for any denied / not medically necessary procedures
         denial_reasons = []
@@ -116,12 +121,7 @@ class AudioBriefingService:
             for line in state.cob_decision.lines_coverage:
                 notes = line.remaining_balance.notes or ""
                 if "not medically necessary" in notes.lower():
-                    if line.cpt_code == "29888":
-                        denial_reasons.append("the ACL reconstruction procedure is not insurable because the diagnostic MRI report shows no ACL injury")
-                    elif line.cpt_code == "29881":
-                        denial_reasons.append("the Meniscectomy procedure is not insurable because the diagnostic MRI report shows no meniscus tear")
-                    else:
-                        denial_reasons.append(f"procedure {line.cpt_code} is not covered as it is not medically necessary")
+                    denial_reasons.append(f"procedure {line.cpt_code} requires clinical review: {notes}")
         
         if denial_reasons:
             reasons_str = ", and ".join(denial_reasons)
@@ -167,25 +167,24 @@ class AudioBriefingService:
             preauth_text = (
                 f"Please note that prior authorization is required by {insurers_str} "
                 "for your scheduled procedures. Our administrative team has already generated "
-                "the necessary prior-authorization request letters, which are ready for submission."
+                "draft prior-authorization requests for clinician verification and signature before submission."
             )
         else:
             preauth_text = (
-                "Good news: prior authorization is not required for these services under your active plans. "
-                "This means your treatment can proceed immediately without waiting for insurance approval."
+                "Prior authorization is not required under the loaded plan rules for these services. "
+                "Please confirm this with the insurer before treatment because plan requirements can change."
             )
 
         # 7. Section: Closing
         if preauth_required_insurers:
             closing_text = (
-                "We will submit the prior-authorization letters to your insurers today. "
-                "We recommend contacting our clinic scheduler in five to seven business days "
-                "to check the status of your authorization and book your treatment."
+                "Before you submit the prior-authorization drafts, have the treating clinician verify and sign each one. "
+                "Contact the insurer or clinic to confirm receipt and authorization status before scheduling."
             )
         else:
             closing_text = (
-                "No further action is required from you. We will file the claim directly with your insurers. "
-                "We recommend keeping copies of your billing statements for your personal records once they arrive."
+                "Review the line-by-line estimate and contact the insurer if member details or accumulated balances differ. "
+                "Keep the final explanation of benefits and provider statements for your records."
             )
 
         # Compile sections

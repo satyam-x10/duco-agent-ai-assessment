@@ -43,6 +43,12 @@ async def get_report_summary(job_id: str):
             detail="Analysis is still in progress. Poll /analysis/status/{job_id} and retry when completed."
         )
 
+    if job_status == "awaiting_approval":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Clinician approval is required before reports or artifacts can be finalized.",
+        )
+
     # Job failed — return structured error
     if job_status == "failed":
         failed_agent = job.get("failed_agent", "Unknown")
@@ -62,6 +68,11 @@ async def get_report_summary(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Workflow state is missing or incomplete despite job completion. This is an internal error."
+        )
+    if not state.artifacts_finalized:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Workflow artifacts have not been finalized.",
         )
 
     # Validate required pipeline outputs exist
@@ -84,8 +95,6 @@ async def get_report_summary(job_id: str):
     patient_responsibility = fin.total_patient_responsibility
 
     patient_name = state.financial_report.patient_name or state.cob_decision.patient_name or "Unknown Patient"
-    if getattr(state, "member_id", None) == "98765":
-        patient_name = "Priya Sen & Aarav Sen (Family)"
 
     # 2. Generate pre-authorization letters from real state
     from services.preauth import PreAuthorizationService
@@ -129,6 +138,7 @@ async def get_report_summary(job_id: str):
     from app.dependencies.audio import get_audio_briefing_service
     briefing_service = get_audio_briefing_service()
     briefing_res = briefing_service.generate_briefing(state)
+    state.audio_briefing = briefing_res.briefing
 
     # 6. Letter download URLs with job_id parameter
     preauth_letters = []
@@ -172,6 +182,9 @@ async def get_report_summary(job_id: str):
                 ClaimLineCoverageSchema(
                     cpt_code=line.cpt_code,
                     description=description,
+                    patient_name=line.patient_name,
+                    member_id=line.member_id,
+                    source_document=line.source_document,
                     billed_amount=line.billed_amount,
                     is_primary_covered=line.primary_coverage.is_covered,
                     primary_deductible=line.primary_coverage.deductible_applied,
@@ -193,6 +206,8 @@ async def get_report_summary(job_id: str):
             primary_paid=primary_paid,
             secondary_paid=secondary_paid,
             patient_responsibility=patient_responsibility,
+            primary_provider=state.cob_decision.primary_provider,
+            secondary_provider=state.cob_decision.secondary_provider,
             currency="INR"
         ),
         preauth_letters=preauth_letters,
@@ -211,62 +226,102 @@ async def get_report_summary(job_id: str):
         requires_human_approval=getattr(state, "requires_human_approval", False),
         human_approved=getattr(state, "human_approved", False),
         cob_lines=cob_lines,
+        patient_claims=state.cob_decision.patient_claims,
     )
 
 
-def generate_minimal_pdf(text: str) -> bytes:
-    """Generates a standard-compliant, fully valid minimal PDF in pure Python."""
-    objects = []
-    
-    # Object 1: Catalog
-    objects.append("1 0 obj\n<< /Type /Catalog /Pages 3 0 R >>\nendobj")
-    
-    # Object 2: Font
-    objects.append("2 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj")
-    
-    # Object 3: Pages
-    objects.append("3 0 obj\n<< /Type /Pages /Kids [4 0 R] /Count 1 >>\nendobj")
-    
-    # Generate content stream
-    lines = text.split("\n")
-    stream_content = "BT\n/F1 10 Tf\n12 TL\n50 780 Td\n"
-    for line in lines:
-        escaped = line.replace("(", "\\(").replace(")", "\\)")
-        stream_content += f"({escaped}) Tj T*\n"
-    stream_content += "ET"
-    
-    stream_len = len(stream_content)
-    
-    # Object 4: Page (references Content stream 5 0 R and Font 2 0 R)
-    objects.append("4 0 obj\n<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595 842] /Contents 5 0 R /Resources << /Font << /F1 2 0 R >> >> >>\nendobj")
-    
-    # Object 5: Content stream
-    objects.append(f"5 0 obj\n<< /Length {stream_len} >>\nstream\n{stream_content}\nendstream\nendobj")
-    
-    # Build PDF and calculate offsets
-    pdf_bytes = b"%PDF-1.4\n"
-    offsets = {}
-    
-    sorted_objects = [
-        (1, objects[0]),
-        (2, objects[1]),
-        (3, objects[2]),
-        (4, objects[3]),
-        (5, objects[4])
-    ]
-    
-    for obj_id, obj_text in sorted_objects:
-        offsets[obj_id] = len(pdf_bytes)
-        pdf_bytes += obj_text.encode("utf-8") + b"\n"
-        
-    xref_pos = len(pdf_bytes)
-    pdf_bytes += b"xref\n0 6\n0000000000 65535 f\n"
-    for obj_id in sorted(offsets.keys()):
-        pdf_bytes += f"{offsets[obj_id]:010d} 00000 n\n".encode("utf-8")
-        
-    pdf_bytes += f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("utf-8")
-    return pdf_bytes
+def generate_letter_pdf(text: str) -> bytes:
+    """Render a readable, multipage clinician-review PDF from the draft markdown."""
+    import html
+    import io
+    import re
 
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    buffer = io.BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=18 * mm,
+        leftMargin=18 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+        title="Prior Authorization Request - Draft for Clinician Review",
+    )
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="DraftTitle", parent=styles["Title"], fontSize=15, leading=18, textColor=colors.HexColor("#16324F"), alignment=TA_CENTER, spaceAfter=8))
+    styles.add(ParagraphStyle(name="Section", parent=styles["Heading2"], fontSize=11, leading=14, textColor=colors.HexColor("#1D4E89"), spaceBefore=8, spaceAfter=4, keepWithNext=True))
+    styles.add(ParagraphStyle(name="Notice", parent=styles["BodyText"], fontSize=8.5, leading=12, backColor=colors.HexColor("#FFF4CC"), borderColor=colors.HexColor("#D8A800"), borderWidth=0.5, borderPadding=7, spaceAfter=8))
+    body_style = ParagraphStyle("LetterBody", parent=styles["BodyText"], fontSize=8.7, leading=12, spaceAfter=2.5)
+
+    def inline(value: str) -> str:
+        value = value.replace("₹", "INR ")
+        value = html.escape(value)
+        value = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", value)
+        value = re.sub(r"`(.+?)`", r"<font name='Courier'>\1</font>", value)
+        return value
+
+    story = []
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        raw = lines[index].strip()
+        if not raw:
+            story.append(Spacer(1, 0.8 * mm))
+            index += 1
+            continue
+        if raw.startswith("| "):
+            table_rows = []
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                cells = [cell.strip() for cell in lines[index].strip().strip("|").split("|")]
+                if not all(re.fullmatch(r"[: -]+", cell) for cell in cells):
+                    table_rows.append([Paragraph(inline(cell), body_style) for cell in cells])
+                index += 1
+            if table_rows:
+                col_widths = [20 * mm, 62 * mm, 38 * mm, 38 * mm][: len(table_rows[0])]
+                table = Table(table_rows, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+                table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF1F8")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#16324F")),
+                    ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#AAB7C4")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]))
+                story.append(table)
+            continue
+        if raw.startswith("# "):
+            story.append(Paragraph(inline(raw[2:]), styles["DraftTitle"]))
+        elif raw.startswith("## "):
+            story.append(Paragraph(inline(raw[3:]), styles["Section"]))
+        elif raw.startswith("> "):
+            story.append(Paragraph(inline(raw[2:]), styles["Notice"]))
+        elif raw.startswith("- "):
+            story.append(Paragraph(f"- {inline(raw[2:])}", body_style))
+        else:
+            story.append(Paragraph(inline(raw.rstrip("  ")), body_style))
+        index += 1
+
+    def footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#607080"))
+        canvas.drawString(18 * mm, 10 * mm, "DRAFT - CLINICIAN REVIEW REQUIRED")
+        canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f"Page {doc.page}")
+        canvas.restoreState()
+
+    document.build(story, onFirstPage=footer, onLaterPages=footer)
+    return buffer.getvalue()
+
+
+generate_minimal_pdf = generate_letter_pdf
 
 from fastapi.responses import Response
 
@@ -283,7 +338,7 @@ async def download_letter(insurer_name: str, job_id: str):
     
     job = jobs_db[job_id]
     state = job.get("state")
-    if not state or state.workflow_status != "success":
+    if job.get("status") != "completed" or not state or state.workflow_status != "success" or not state.artifacts_finalized:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Workflow state is not ready or failed."
@@ -318,11 +373,66 @@ async def download_letter(insurer_name: str, job_id: str):
         }
     )
 
+@router.get("/download/cost_flow.svg")
+async def download_cost_flow(job_id: str):
+    """
+    Generates and downloads a dynamic SVG waterfall chart representing the exact live COB decision.
+    """
+    if job_id not in jobs_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Analysis job '{job_id}' not found."
+        )
+
+    job = jobs_db[job_id]
+    state = job.get("state")
+    if job.get("status") != "completed" or not state or state.workflow_status != "success" or not state.artifacts_finalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Workflow state is not ready or failed."
+        )
+
+    from services.cost_flow import CostFlowVisualizerService
+    
+    fin = state.financial_report.breakdown.summary if state.financial_report else None
+    total_billed = fin.total_billed if fin else 0.0
+    primary_paid = fin.total_primary_paid if fin else 0.0
+    secondary_paid = fin.total_secondary_paid if fin else 0.0
+    patient_resp = fin.total_patient_responsibility if fin else 0.0
+    
+    lines_summary = []
+    if state.cob_decision and state.cob_decision.lines_coverage:
+        for line in state.cob_decision.lines_coverage:
+            lines_summary.append({
+                "cpt_code": line.cpt_code,
+                "billed_amount": line.billed_amount,
+            })
+    
+    svg_content = CostFlowVisualizerService.generate_svg(
+        billed=total_billed,
+        primary_paid=primary_paid,
+        secondary_paid=secondary_paid,
+        patient_responsibility=patient_resp,
+        primary_payer=state.cob_decision.primary_provider if state.cob_decision else "Primary Payer",
+        secondary_payer=state.cob_decision.secondary_provider if state.cob_decision else None,
+        patient_name=state.cob_decision.patient_name if state.cob_decision else "Patient",
+        lines_summary=lines_summary,
+    )
+
+    return Response(
+        content=svg_content.encode("utf-8"),
+        media_type="image/svg+xml",
+        headers={
+            "Content-Disposition": "attachment; filename=dual_coverage_cost_flow.svg"
+        }
+    )
+
 
 @router.get("/download/audio_summary.mp3")
 async def download_audio_summary(job_id: str):
     """
-    Streams a valid audio summary MP3 file containing the narration briefing.
+    Streams an audio summary MP3 file containing the narration briefing.
+    Raises an explicit HTTP 503 error if the text-to-speech engine fails rather than returning silent frames.
     """
     if job_id not in jobs_db:
         raise HTTPException(
@@ -332,13 +442,19 @@ async def download_audio_summary(job_id: str):
         
     job = jobs_db[job_id]
     state = job.get("state")
+    if job.get("status") != "completed" or not state or not state.artifacts_finalized:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Audio is unavailable until the workflow is finalized.",
+        )
     
-    # Try to generate real speech from full_narration if available
-    narration_text = ""
-    if state and state.audio_briefing and state.audio_briefing.full_narration:
-        narration_text = state.audio_briefing.full_narration
-    else:
-        narration_text = "This is a pre-authorization benefits coordination summary for Priya Sen and Aarav Sen."
+    if not state.audio_briefing or not state.audio_briefing.full_narration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audio briefing narration text is missing from finalized state."
+        )
+
+    narration_text = state.audio_briefing.full_narration
         
     try:
         from gtts import gTTS
@@ -348,8 +464,11 @@ async def download_audio_summary(job_id: str):
         tts.write_to_fp(fp)
         mp3_bytes = fp.getvalue()
     except Exception as e:
-        logger.warning(f"Failed to generate TTS MP3: {e}. Falling back to standard silence.")
-        mp3_bytes = b"\xff\xfb\x90\xc4\x00\x00\x00\x03\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" * 100
+        logger.error(f"Failed to generate TTS MP3 via online service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Text-to-speech audio service is currently unavailable: {str(e)}. Please review the text transcript."
+        )
     
     return Response(
         content=mp3_bytes,

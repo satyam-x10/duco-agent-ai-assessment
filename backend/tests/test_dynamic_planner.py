@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.core.adk import SharedWorkflowState, Orchestrator, TraceEntry
 from app.schemas.intake import DocumentType
 from app.schemas.document_intelligence import ProcessedDocument
+from services.document_facts import extract_document_facts
 from app.schemas.medical_coding import CodingResult, Diagnosis, Procedure
 from app.schemas.insurance_engine import InsurancePolicy, Member, CoverageRule, Coinsurance, Deductible
 from services.preauth import PreAuthorizationService
@@ -194,9 +195,10 @@ async def test_rule3_bypass_cob_agent_single_policy():
     
     state.processed_documents[DocumentType.USER_QUERY_TRANSCRIPT] = ProcessedDocument(
         document_type=DocumentType.USER_QUERY_TRANSCRIPT,
-        extracted_text="Priya Sen Medical Records CPT 97161",
+        extracted_text="Patient Name: Priya Sen\nMember ID: 98765\nICD-10 M23.231\nCPT 97161 - INR 500.00",
         page_count=1,
-        confidence=1.0
+        confidence=1.0,
+        facts=extract_document_facts("Patient Name: Priya Sen\nMember ID: 98765\nICD-10 M23.231\nCPT 97161 - INR 500.00"),
     )
     state.coding_result = CodingResult(
         diagnoses=[Diagnosis(code="M23.231", description="Meniscus tear", confidence=0.99)],
@@ -213,6 +215,15 @@ async def test_rule3_bypass_cob_agent_single_policy():
     mock_insurance_service = MagicMock()
     mock_insurance_service.get_member = MagicMock(return_value=state.primary_policy.members[0])
     mock_insurance_service._policies = {"BS-120-BLUE": state.primary_policy}
+    mock_insurance_service.get_coverage_rule = MagicMock(
+        side_effect=lambda policy, code: next((r for r in policy.coverage_rules if r.cpt_code == code), None)
+    )
+    mock_insurance_service.get_accumulator = MagicMock(return_value={
+        "remaining_individual_deductible": 200.0,
+        "remaining_out_of_pocket_max": 1200.0,
+    })
+    mock_insurance_service.update_accumulator = MagicMock()
+    mock_insurance_service._family_deductibles = {"BS-120-BLUE": 500.0}
     
     from services.cob_engine import COBEngine
     cob_engine = COBEngine(mock_insurance_service)

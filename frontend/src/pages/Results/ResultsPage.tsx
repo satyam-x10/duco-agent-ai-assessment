@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { PageContainer } from '../../components/layout/PageContainer';
 import { ApiService } from '../../services/api';
 
-// Cost Flow Visualizer Component (SVG Adjudication Chain)
 // Cost Flow Visualizer Component (SVG Adjudication Chain)
 const CostFlowVisualizer: React.FC<{
   billed: number;
@@ -13,8 +12,10 @@ const CostFlowVisualizer: React.FC<{
   primaryInsurer: string;
   secondaryInsurer: string;
   currencySymbol: string;
-}> = ({ billed, primaryPaid, secondaryPaid, patientOwes, primaryInsurer, secondaryInsurer, currencySymbol }) => {
+  providerName?: string;
+}> = ({ billed, primaryPaid, secondaryPaid, patientOwes, primaryInsurer, secondaryInsurer, currencySymbol, providerName }) => {
   const hasSecondary = !!secondaryInsurer && secondaryInsurer.trim() !== "";
+  const displayProvider = providerName || "Healthcare Provider";
 
   return (
     <div className="flex flex-col items-center py-8 bg-slate-50/50 rounded-2xl border border-slate-200/80 shadow-inner">
@@ -25,7 +26,7 @@ const CostFlowVisualizer: React.FC<{
         </div>
         <div>
           <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Medical Provider</h4>
-          <p className="text-sm font-extrabold text-slate-800">Summit Clinic</p>
+          <p className="text-sm font-extrabold text-slate-800">{displayProvider}</p>
         </div>
       </div>
 
@@ -199,7 +200,7 @@ const PreAuthLettersPanel: React.FC<{ letters: any[]; preauthLettersMetadata?: a
                     viewBox="0 0 24 24"
                     strokeWidth={2.5}
                     stroke="currentColor"
-                    className={`h-4 w-4 text-slate-400 transition-transform duration-250 {isExpanded ? 'rotate-180' : ''}`}
+                    className={`h-4 w-4 text-slate-400 transition-transform duration-250 ${isExpanded ? 'rotate-180' : ''}`}
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                   </svg>
@@ -320,13 +321,56 @@ export const ResultsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [failedStep, setFailedStep] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const togglePlayAudio = () => {
     if (isPlayingAudio) {
-      window.speechSynthesis.cancel();
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
       setIsPlayingAudio(false);
     } else {
-      if (report?.audio_briefing?.full_narration) {
+      const audioUrl = report?.audio_summary?.download_url
+        ? `http://127.0.0.1:8000${report.audio_summary.download_url}`
+        : null;
+
+      if (audioUrl) {
+        if (!audioPlayerRef.current) {
+          audioPlayerRef.current = new Audio(audioUrl);
+        } else {
+          audioPlayerRef.current.src = audioUrl;
+        }
+
+        audioPlayerRef.current.onended = () => setIsPlayingAudio(false);
+        audioPlayerRef.current.onerror = () => {
+          // Fallback to browser SpeechSynthesis if MP3 stream is unavailable
+          if (report?.audio_briefing?.full_narration && 'speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(report.audio_briefing.full_narration);
+            utterance.onend = () => setIsPlayingAudio(false);
+            utterance.onerror = () => setIsPlayingAudio(false);
+            window.speechSynthesis.speak(utterance);
+          } else {
+            setIsPlayingAudio(false);
+          }
+        };
+
+        setIsPlayingAudio(true);
+        audioPlayerRef.current.play().catch(() => {
+          // Fallback if autoplay policy interrupts audio
+          if (report?.audio_briefing?.full_narration && 'speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(report.audio_briefing.full_narration);
+            utterance.onend = () => setIsPlayingAudio(false);
+            utterance.onerror = () => setIsPlayingAudio(false);
+            window.speechSynthesis.speak(utterance);
+          } else {
+            setIsPlayingAudio(false);
+          }
+        });
+      } else if (report?.audio_briefing?.full_narration && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(report.audio_briefing.full_narration);
         utterance.onend = () => setIsPlayingAudio(false);
@@ -339,11 +383,16 @@ export const ResultsPage: React.FC = () => {
 
   useEffect(() => {
     return () => {
-      window.speechSynthesis.cancel();
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
     };
   }, []);
 
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     if (!jobId) {
       setError('No job ID provided. Please run an analysis first from the Intake Workspace.');
       setLoading(false);
@@ -373,7 +422,7 @@ export const ResultsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [jobId]);
 
   const handleApprove = async () => {
     if (!jobId) return;
@@ -406,7 +455,7 @@ export const ResultsPage: React.FC = () => {
 
   useEffect(() => {
     fetchReport();
-  }, [jobId]);
+  }, [fetchReport]);
 
   if (loading) {
     return (
@@ -578,6 +627,29 @@ export const ResultsPage: React.FC = () => {
                 </p>
               </div>
             </div>
+            {report.patient_claims?.length > 1 && (
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">Patient-specific claims</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {report.patient_claims.map((claim: any) => (
+                    <div key={claim.member_id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-extrabold text-slate-800">{claim.patient_name}</p>
+                          <p className="text-[10px] text-slate-500">Member {claim.member_id}</p>
+                        </div>
+                        <p className="text-sm font-extrabold text-amber-800">
+                          ₹{claim.total_patient_responsibility.toFixed(2)} due
+                        </p>
+                      </div>
+                      <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                        Billed ₹{claim.total_billed.toFixed(2)} · Primary {claim.primary_policy_id || 'unresolved'} · Secondary {claim.secondary_policy_id || 'none'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Per-Procedure Coverage Decision Breakdown */}
@@ -615,7 +687,7 @@ export const ResultsPage: React.FC = () => {
                   return (
                     <div key={idx} className={`rounded-xl border ${borderColor} ${bgColor} p-4 transition-all hover:shadow-sm`}>
                       {/* Header row */}
-                      <div className="flex items-center justify-between mb-3">
+                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-300/50 font-mono shrink-0">
                             {line.cpt_code}
@@ -629,8 +701,22 @@ export const ResultsPage: React.FC = () => {
                             {statusIcon} {statusText}
                           </span>
                         </div>
-                        <span className="text-sm font-extrabold text-slate-800">{currSym}{line.billed_amount.toFixed(2)}</span>
-                      </div>
+                         <span className="text-sm font-extrabold text-slate-800">{currSym}{line.billed_amount.toFixed(2)}</span>
+                       </div>
+                       {(line.patient_name || line.source_document) && (
+                         <div className="mb-3 flex flex-wrap gap-2 text-[10px] font-semibold text-slate-500">
+                           {line.patient_name && (
+                             <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
+                               Patient: {line.patient_name}{line.member_id ? ` (${line.member_id})` : ''}
+                             </span>
+                           )}
+                           {line.source_document && (
+                             <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
+                               Charge source: {line.source_document.replaceAll('_', ' ')}
+                             </span>
+                           )}
+                         </div>
+                       )}
                       
                       {/* Payment details grid */}
                       <div className="grid grid-cols-3 gap-3 text-xs">
@@ -719,15 +805,27 @@ export const ResultsPage: React.FC = () => {
 
           {/* Cost Flow Visual Path */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Adjudicated Claims Cost Flow</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Adjudicated Claims Cost Flow</h3>
+              {jobId && (
+                <a
+                  href={`http://127.0.0.1:8000/api/v1/reports/download/cost_flow.svg?job_id=${jobId}`}
+                  download="dual_coverage_cost_flow.svg"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-blue-650 transition-colors shadow-sm"
+                >
+                  📊 Download SVG Waterfall
+                </a>
+              )}
+            </div>
             <CostFlowVisualizer
               billed={report.financial_summary.total_billed}
               primaryPaid={report.financial_summary.primary_paid}
               secondaryPaid={report.financial_summary.secondary_paid}
               patientOwes={report.financial_summary.patient_responsibility}
-              primaryInsurer={report.preauth_letters[0]?.insurer_name || 'BlueShield Cross'}
-              secondaryInsurer={report.preauth_letters[1]?.insurer_name || 'UnitedHealth'}
+              primaryInsurer={report.financial_summary.primary_provider || 'Primary Insurer'}
+              secondaryInsurer={report.financial_summary.secondary_provider || ''}
               currencySymbol={report.financial_summary.currency === 'INR' ? '₹' : '$'}
+              providerName={report.cob_lines?.[0]?.source_document ? undefined : undefined}
             />
           </div>
 
@@ -759,7 +857,7 @@ export const ResultsPage: React.FC = () => {
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <div className="h-1.5 w-16 rounded-full bg-slate-100 overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded-full animate-pulse-slow" style={{ width: `{diag.confidence * 100}%` }} />
+                                <div className="h-full bg-emerald-500 rounded-full animate-pulse-slow" style={{ width: `${diag.confidence * 100}%` }} />
                               </div>
                               <span className="font-mono font-bold text-slate-550">{(diag.confidence * 100).toFixed(0)}%</span>
                             </div>
@@ -799,7 +897,7 @@ export const ResultsPage: React.FC = () => {
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <div className="h-1.5 w-16 rounded-full bg-slate-100 overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded-full animate-pulse-slow" style={{ width: `{proc.confidence * 100}%` }} />
+                                <div className="h-full bg-emerald-500 rounded-full animate-pulse-slow" style={{ width: `${proc.confidence * 100}%` }} />
                               </div>
                               <span className="font-mono font-bold text-slate-550">{(proc.confidence * 100).toFixed(0)}%</span>
                             </div>
@@ -833,7 +931,7 @@ export const ResultsPage: React.FC = () => {
             <div className="space-y-3.5">
               {Object.entries(report.workflow_summary || {}).map(([step, completed], i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border {
+                  <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
                     completed 
                       ? 'bg-emerald-50 border-emerald-500 text-emerald-600 shadow-sm' 
                       : 'border-slate-200 text-slate-300'
@@ -846,7 +944,7 @@ export const ResultsPage: React.FC = () => {
                       <div className="h-1.5 w-1.5 rounded-full bg-slate-350" />
                     )}
                   </div>
-                  <span className={`text-xs font-semibold {completed ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>
+                  <span className={`text-xs font-semibold ${completed ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>
                     {step}
                   </span>
                 </div>

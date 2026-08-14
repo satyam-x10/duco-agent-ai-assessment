@@ -30,6 +30,9 @@ class CoverageRule(BaseModel):
     cpt_code: str = Field(..., description="The CPT procedure code (e.g., 97161)")
     is_covered: bool = Field(..., description="Whether this procedure is covered under the policy")
     requires_preauth: bool = Field(..., description="Whether pre-authorization is required for this CPT code")
+    allowed_amount: Optional[float] = Field(None, description="Contracted maximum allowed amount for this CPT")
+    copay: float = Field(0.0, description="Fixed copay amount required before or alongside deductible")
+    deductible_applies: bool = Field(True, description="Whether the plan deductible applies to this procedure")
     limitations: Optional[str] = Field(None, description="Optional text describing coverage limitations or requirements")
 
 
@@ -38,6 +41,9 @@ class InsurancePolicy(BaseModel):
     policy_id: str = Field(..., description="Unique policy identifier")
     provider_name: str = Field(..., description="Name of the insurance provider")
     group_number: str = Field(..., description="Group policy number")
+    policy_version: Optional[str] = Field("2026.1", description="Version identifier of the payer policy contract")
+    source_regulation: Optional[str] = Field(None, description="Governing statutory/regulatory source standard (e.g., NAIC Model COB #120, CMS Claims Processing)")
+    effective_date: Optional[str] = Field(None, description="Effective policy calendar date")
     deductible: Deductible = Field(..., description="Deductible configuration")
     coinsurance: Coinsurance = Field(..., description="Coinsurance configuration")
     out_of_pocket_max: float = Field(..., description="Out of pocket maximum threshold")

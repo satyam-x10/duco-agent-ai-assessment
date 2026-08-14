@@ -28,8 +28,13 @@ class ReviewerAgent(Agent):
             import asyncio
             await asyncio.sleep(0.8)
             
-        # Clear previous warnings to prevent duplicates during backtracking or retries
-        state.warnings = []
+        # Preserve grounding/document warnings produced by deterministic tools;
+        # clear only prior reviewer findings before a fresh audit.
+        state.warnings = [
+            warning for warning in state.warnings
+            if warning.startswith("[Grounding Inconsistency]")
+            or warning.startswith("[Document Quality]")
+        ]
 
         # 1. Run deterministic Python checks (which populate state.warnings and throw ValueErrors if structure is broken)
         self._run_python_checks(state)
@@ -126,6 +131,12 @@ If you find policy/name discrepancies or medical coding inconsistencies/lack of 
             
         if not state.financial_report.primary_policy_id:
             state.warnings.append("Warning: Primary insurance policy identifier is missing.")
+
+        for document_type, document in state.processed_documents.items():
+            if document.confidence < 0.90 or document.quality_issues:
+                details = "; ".join(document.quality_issues) or f"confidence {document.confidence:.2f}"
+                state.warnings.append(f"[Document Quality] {document_type.value}: {details}")
+                state.requires_human_approval = True
             
         # 3. Audit confidence levels of extracted clinical codes
         if state.coding_result:

@@ -1,7 +1,10 @@
 import pytest
+
 from app.core.adk import SharedWorkflowState
+from app.schemas.cob_engine import Claim, ClaimLine
 from app.schemas.medical_coding import CodingResult, Diagnosis, Procedure
 from app.schemas.preauth import PreAuthResponse
+from services.cob_engine import COBEngine
 from services.insurance_engine import InsuranceService
 from services.preauth import PreAuthorizationService
 
@@ -11,92 +14,69 @@ def preauth_service():
     return PreAuthorizationService()
 
 
-@pytest.fixture
-def mock_insurance_service():
-    return InsuranceService()
+def _adjudicated_state(*, dual_coverage: bool) -> SharedWorkflowState:
+    insurance = InsuranceService()
+    if not dual_coverage:
+        insurance._policies.pop("UH-990-GOLD")
 
-
-def test_generate_letters_dual_coverage(preauth_service, mock_insurance_service):
-    """Verify that PreAuthorizationService generates professional request letters for both primary and secondary insurers."""
-    # Set up SharedWorkflowState for Priya Sen (Member 98765)
-    state = SharedWorkflowState(claim_id="TEST-100", member_id="98765")
-    
-    # Load policies
-    state.primary_policy = mock_insurance_service._policies["BS-120-BLUE"]
-    state.secondary_policy = mock_insurance_service._policies["UH-990-GOLD"]
-    
-    # Inject mock coding result
-    state.coding_result = CodingResult(
-        diagnoses=[
-            Diagnosis(code="M23.231", description="Tear of meniscus", confidence=0.98)
-        ],
-        procedures=[
-            Procedure(code="97161", description="PT Evaluation", confidence=0.95),
-            Procedure(code="29881", description="Arthroscopy knee meniscus repair", confidence=0.97)
-        ]
+    member_id = "98765-02"
+    patient_name = "Aarav Sen"
+    line = ClaimLine(
+        cpt_code="29888",
+        billed_amount=350000.0,
+        member_id=member_id,
+        patient_name=patient_name,
+        diagnoses=["S83.511A"],
+        source_document="surgeon_estimate",
+        source_evidence="CPT 29888 - INR 350000.00",
     )
+    decision = COBEngine(insurance).coordinate_benefits(
+        Claim(
+            claim_id="TEST-100",
+            member_id=member_id,
+            lines=[line],
+            diagnoses=["S83.511A"],
+        )
+    )
+    state = SharedWorkflowState(
+        claim_id="TEST-100",
+        member_id=member_id,
+        patient_name=patient_name,
+        claim_lines=[line],
+        cob_decision=decision,
+        coding_result=CodingResult(
+            diagnoses=[Diagnosis(code="S83.511A", description="ACL injury", confidence=1.0)],
+            procedures=[Procedure(code="29888", description="ACL reconstruction", confidence=1.0)],
+        ),
+        primary_policy=insurance._policies["BS-120-BLUE"],
+        secondary_policy=insurance._policies.get("UH-990-GOLD"),
+    )
+    return state
+
+
+def test_generate_separate_source_grounded_letters_for_both_plans(preauth_service):
+    state = _adjudicated_state(dual_coverage=True)
 
     response = preauth_service.generate_letters(state)
 
     assert isinstance(response, PreAuthResponse)
     assert response.claim_id == "TEST-100"
     assert len(response.letters) == 2
+    assert {letter.insurer_name for letter in response.letters} == {"BlueShield Cross", "UnitedHealth"}
 
-    # Insurer 1: BlueShield
-    letter1 = response.letters[0]
-    assert letter1.insurer_name == "BlueShield Cross"
-    assert letter1.policy_id == "BS-120-BLUE"
-    assert letter1.patient_name == "Priya Sen"
-    
-    content1 = letter1.letter_content
-    assert "Prior Authorization Department, BlueShield Cross" in content1
-    assert "Patient Name:** Priya Sen" in content1
-    assert "Date of Birth:** 1985-04-12" in content1
-    assert "Member ID:** 98765" in content1
-    assert "Dr. Sarah Jenkins, MD" in content1
-    assert "1982736450" in content1
-    assert "M23.231" in content1
-    assert "Tear of meniscus" in content1
-    assert "97161" in content1
-    assert "29881" in content1
-    assert "Estimated Billed" in content1
-    
-    # Verify pre-auth rules resolved under BS-120-BLUE
-    # CPT 29881 requires preauth on BlueShield (YES (Required))
-    # CPT 97161 does not (No (Covered))
-    assert "| `29881` | Arthroscopy knee meniscus repair | ₹100,000.00 | YES (Required) |" in content1
-    assert "| `97161` | PT Evaluation | ₹20,000.00 | No (Covered) |" in content1
-
-    # Insurer 2: UnitedHealth
-    letter2 = response.letters[1]
-    assert letter2.insurer_name == "UnitedHealth"
-    assert letter2.policy_id == "UH-990-GOLD"
-    
-    content2 = letter2.letter_content
-    assert "Prior Authorization Department, UnitedHealth" in content2
-    # In UnitedHealth, Priya Sen's member ID is 12345-02
-    assert "Member ID:** 12345-02" in content2
-    
-    # Verify pre-auth rules resolved under UH-990-GOLD
-    # CPT 29881 does NOT require preauth on UnitedHealth (No (Covered))
-    assert "| `29881` | Arthroscopy knee meniscus repair | ₹100,000.00 | No (Covered) |" in content2
+    blue = next(letter for letter in response.letters if letter.insurer_name == "BlueShield Cross")
+    united = next(letter for letter in response.letters if letter.insurer_name == "UnitedHealth")
+    assert "DRAFT FOR CLINICIAN REVIEW" in blue.letter_content
+    assert "**Member ID:** 98765-02" in blue.letter_content
+    assert "**Member ID:** 12345-03" in united.letter_content
+    assert "| `29888` | ACL reconstruction | INR 350,000.00 | surgeon_estimate |" in blue.letter_content
+    assert "S83.511A" in blue.letter_content
+    assert "Dr. Sarah Jenkins" not in blue.letter_content
+    assert "clinician completion required" in blue.letter_content
 
 
-def test_generate_letters_single_coverage(preauth_service, mock_insurance_service):
-    """Verify that only one letter is generated when the patient has single-insurer coverage."""
-    state = SharedWorkflowState(claim_id="TEST-200", member_id="98765")
-    
-    state.primary_policy = mock_insurance_service._policies["BS-120-BLUE"]
-    state.secondary_policy = None
-    
-    state.coding_result = CodingResult(
-        diagnoses=[
-            Diagnosis(code="M23.231", description="Tear of meniscus", confidence=0.98)
-        ],
-        procedures=[
-            Procedure(code="29881", description="Arthroscopy knee meniscus repair", confidence=0.97)
-        ]
-    )
+def test_generate_one_letter_for_single_coverage(preauth_service):
+    state = _adjudicated_state(dual_coverage=False)
 
     response = preauth_service.generate_letters(state)
 

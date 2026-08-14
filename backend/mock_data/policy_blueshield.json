@@ -2,6 +2,9 @@
   "policy_id": "BS-120-BLUE",
   "provider_name": "BlueShield Cross",
   "group_number": "BS120",
+  "policy_version": "2026.1-PROD",
+  "source_regulation": "NAIC Model COB Regulation #120; ACA Sec. 2707; CPT 2026 Professional Fee Schedule",
+  "effective_date": "2026-01-01",
   "deductible": {
     "individual": 50000.0,
     "family": 100000.0,
@@ -36,30 +39,63 @@
       "cpt_code": "97161",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Max 12 sessions per calendar year"
     },
     {
       "cpt_code": "97110",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Requires certified therapist provider"
+    },
+    {
+      "cpt_code": "97140",
+      "is_covered": true,
+      "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
+      "limitations": "Manual therapy must be documented in the treatment record"
+    },
+    {
+      "cpt_code": "97112",
+      "is_covered": true,
+      "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
+      "limitations": "Neuromuscular re-education must be performed by an eligible provider"
     },
     {
       "cpt_code": "73721",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "One scan per joint per 6 months"
     },
     {
       "cpt_code": "29881",
       "is_covered": true,
       "requires_preauth": true,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Must show prior conservative therapy failure"
     },
     {
       "cpt_code": "29888",
       "is_covered": true,
       "requires_preauth": true,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Surgical repair limits apply"
     }
   ]

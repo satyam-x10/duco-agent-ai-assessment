@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  
+  --color-enterprise-blue: #0A2540;
+  --color-enterprise-slate: #639FAB;
+  --color-enterprise-dark: #0f172a;
+  --color-enterprise-bg: #f8fafc;
+}
+
+body {
+  background-color: var(--color-enterprise-bg);
+  color: var(--color-enterprise-dark);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

@@ -268,6 +268,8 @@ def generate_minimal_pdf(text: str) -> bytes:
     return pdf_bytes
 
 
+generate_letter_pdf = generate_minimal_pdf
+
 from fastapi.responses import Response
 
 @router.get("/download/letter_{insurer_name}.pdf")

@@ -30,6 +30,9 @@ class CoverageRule(BaseModel):
     cpt_code: str = Field(..., description="The CPT procedure code (e.g., 97161)")
     is_covered: bool = Field(..., description="Whether this procedure is covered under the policy")
     requires_preauth: bool = Field(..., description="Whether pre-authorization is required for this CPT code")
+    allowed_amount: Optional[float] = Field(None, description="Contracted maximum allowed amount for this CPT")
+    copay: float = Field(0.0, description="Fixed copay amount required before or alongside deductible")
+    deductible_applies: bool = Field(True, description="Whether the plan deductible applies to this procedure")
     limitations: Optional[str] = Field(None, description="Optional text describing coverage limitations or requirements")
 
 

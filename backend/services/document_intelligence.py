@@ -9,8 +9,38 @@ from pypdf import PdfReader
 
 from app.schemas.intake import DocumentType
 from app.schemas.document_intelligence import ProcessedDocument
+from services.document_facts import extract_document_facts
 
 logger = logging.getLogger(__name__)
+
+
+def compute_extraction_quality(text: str, document_type: DocumentType, strategy: str = "standard") -> tuple[float, list[str]]:
+    """Evaluates the quality and confidence of extracted OCR text."""
+    issues = []
+    if not text or len(text.strip()) < 10:
+        return 0.20, ["Document text is nearly empty or unreadable."]
+
+    facts = extract_document_facts(text)
+    score = 0.95
+
+    # Check key medical facts
+    if not facts.patient_name:
+        issues.append("Patient name could not be resolved from text.")
+        score -= 0.05
+    if not facts.member_id:
+        issues.append("Member ID could not be resolved from text.")
+        score -= 0.05
+    if not facts.line_items and document_type in (
+        DocumentType.PRIYA_PT_INVOICE,
+        DocumentType.SURGEON_ESTIMATE,
+    ):
+        issues.append("No billed CPT line items could be detected.")
+        score -= 0.10
+
+    if strategy == "high_fidelity":
+        score = max(0.95, score + 0.05)
+
+    return max(0.50, min(1.0, score)), issues
 
 
 class DocumentProcessor(ABC):
@@ -37,11 +67,16 @@ class TextProcessor(DocumentProcessor):
         if not content.strip():
             raise ValueError(f"Text document at '{file_path}' is empty.")
 
+        facts = extract_document_facts(content)
+        _, issues = compute_extraction_quality(content, document_type, strategy)
+
         return ProcessedDocument(
             document_type=document_type,
             extracted_text=content,
             page_count=1,
             confidence=1.0,
+            facts=facts,
+            quality_issues=issues,
             metadata={
                 "parser": "TextProcessor",
                 "character_count": len(content),
@@ -81,11 +116,16 @@ class PDFProcessor(DocumentProcessor):
                 confidence = 0.99
                 parser_name = "PDFProcessor"
 
+            facts = extract_document_facts(extracted_text)
+            _, issues = compute_extraction_quality(extracted_text, document_type, strategy)
+
             return ProcessedDocument(
                 document_type=document_type,
                 extracted_text=extracted_text,
                 page_count=page_count,
                 confidence=confidence,
+                facts=facts,
+                quality_issues=issues,
                 metadata={
                     "parser": parser_name,
                     "page_count_resolved": page_count,
@@ -191,11 +231,17 @@ class ImageProcessor(DocumentProcessor):
             parser_name = "ImageProcessor (RapidOCR Local)"
             ocr_method = "RapidOCRLocal"
 
+        facts = extract_document_facts(extracted_text)
+        _, issues = compute_extraction_quality(extracted_text, document_type, strategy)
+        confidence = 0.99 if strategy == "high_fidelity" else 0.98
+
         return ProcessedDocument(
             document_type=document_type,
             extracted_text=extracted_text,
             page_count=1,
-            confidence=0.99 if strategy == "high_fidelity" else 0.98,
+            confidence=confidence,
+            facts=facts,
+            quality_issues=issues,
             metadata={
                 "parser": parser_name,
                 "ocr_method": ocr_method,

@@ -36,30 +36,45 @@
       "cpt_code": "97161",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Max 12 sessions per calendar year"
     },
     {
       "cpt_code": "97110",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Requires certified therapist provider"
     },
     {
       "cpt_code": "73721",
       "is_covered": true,
       "requires_preauth": false,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "One scan per joint per 6 months"
     },
     {
       "cpt_code": "29881",
       "is_covered": true,
       "requires_preauth": true,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Must show prior conservative therapy failure"
     },
     {
       "cpt_code": "29888",
       "is_covered": true,
       "requires_preauth": true,
+      "allowed_amount": null,
+      "copay": 0.0,
+      "deductible_applies": true,
       "limitations": "Surgical repair limits apply"
     }
   ]

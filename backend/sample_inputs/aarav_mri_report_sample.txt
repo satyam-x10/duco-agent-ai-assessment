@@ -1,0 +1,19 @@
+METRO IMAGING DIAGNOSTIC RADIOLOGY REPORT
+Date: 2026-06-19
+Patient Name: Aarav Sen
+DOB: 2012-05-14
+Member ID: 98765-02
+Referring Physician: Dr. Meera Shah, MD
+
+EXAMINATION: MRI RIGHT KNEE WITHOUT CONTRAST (CPT: 73721)
+Billed Charge: INR 12000.00
+
+FINDINGS:
+- Medial Meniscus: Horizontal tear of the posterior horn of the medial meniscus (ICD-10: M23.231).
+- Anterior Cruciate Ligament (ACL): Intact with normal caliber and signal intensity. No tear identified (Observation: Z04.89).
+- Posterior Cruciate Ligament: Intact.
+- Collateral Ligaments: Intact.
+
+IMPRESSION:
+1. Derangement of posterior horn of medial meniscus, right knee (M23.231).
+2. Intact ACL without tear or disruption.

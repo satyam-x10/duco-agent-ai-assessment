@@ -9,7 +9,7 @@ from app.schemas.intake import DocumentType
 from app.schemas.document_intelligence import ProcessedDocument
 from app.schemas.medical_coding import CodingResult
 from app.schemas.insurance_engine import InsurancePolicy
-from app.schemas.cob_engine import COBDecision
+from app.schemas.cob_engine import COBDecision, ClaimLine
 from app.schemas.finance_engine import FinancialReport
 
 from pathlib import Path
@@ -56,16 +56,20 @@ class SharedWorkflowState(BaseModel):
     """The shared mutable workflow state passed between coordinated agents."""
     claim_id: str = Field(..., description="Claim ID associated with the run")
     member_id: str = Field(..., description="Member ID of the patient")
-    ocr_engine: str = Field("gemini", description="OCR engine choice for image/scanned PDF processing: library | gemini")
+    patient_name: Optional[str] = Field(None, description="Patient name if resolved")
+    ocr_engine: str = Field("gemini", description="OCR engine choice: library | gemini")
     mock_mode: bool = Field(False, description="Whether to run in mock mode bypassing Gemini API calls")
     processed_documents: Dict[DocumentType, ProcessedDocument] = Field(default_factory=dict, description="Extracted texts from document intelligence")
     ocr_strategies: Dict[DocumentType, str] = Field(default_factory=dict, description="Dynamic extraction strategies resolved for document types")
     coding_result: Optional[CodingResult] = Field(None, description="Extracted clinical diagnosis and procedure codes")
+    claim_lines: List[ClaimLine] = Field(default_factory=list, description="Source-grounded billed procedure charges")
     primary_policy: Optional[InsurancePolicy] = Field(None, description="Resolved primary policy details")
     secondary_policy: Optional[InsurancePolicy] = Field(None, description="Resolved secondary policy details")
     cob_decision: Optional[COBDecision] = Field(None, description="Adjudicated benefits order and coverage calculations")
     financial_report: Optional[FinancialReport] = Field(None, description="Audited payment allocations ledger")
+    audio_briefing: Optional[object] = Field(None, description="Patient audio summary briefing object")
     warnings: List[str] = Field(default_factory=list, description="Quality, low confidence, or structure audit warnings")
+    judge_feedback: List[str] = Field(default_factory=list, description="Reflection and clinician judge feedback history")
     trace: List[TraceEntry] = Field(default_factory=list, description="Sequence trace log details")
     errors: List[str] = Field(default_factory=list, description="Encountered execution exception details")
     workflow_status: str = Field("pending", description="Overall pipeline status: pending | running | success | failed")
@@ -73,6 +77,7 @@ class SharedWorkflowState(BaseModel):
     failure_reason: Optional[str] = Field(None, description="Human-readable reason for workflow failure")
     requires_human_approval: bool = Field(False, description="Flag indicating if the claim needs human auditor sign-off")
     human_approved: bool = Field(False, description="Whether the auditor has signed off on the claim")
+    artifacts_finalized: bool = Field(False, description="Whether artifacts are approved and finalized for export")
 
 
 class Agent(ABC):
@@ -438,7 +443,18 @@ class Orchestrator:
                             raise RuntimeError(fatal_msg) from e
 
             if state.workflow_status == "running":
-                state.workflow_status = "success"
+                if step_count >= max_steps:
+                    state.workflow_status = "failed"
+                    state.failure_reason = f"Planner exceeded maximum allowable step limit ({max_steps} iterations) without convergence."
+                    state.trace.append(
+                        TraceEntry(
+                            agent_name="Orchestrator",
+                            status="error",
+                            message=state.failure_reason,
+                        )
+                    )
+                else:
+                    state.workflow_status = "success"
             append_realtime_log(f"--- ORCHESTRATION PIPELINE COMPLETED (Status: {state.workflow_status}) ---")
         else:
             # Fallback for custom test sequences

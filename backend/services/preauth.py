@@ -96,11 +96,17 @@ class PreAuthorizationService:
 
         logger.info(f"Generating pre-authorization letters for claim {state.claim_id}")
 
-        patient_name = "Priya Sen"
-        if state.financial_report and state.financial_report.patient_name:
+        patient_name = state.patient_name
+        if not patient_name and state.financial_report and state.financial_report.patient_name:
             patient_name = state.financial_report.patient_name
-        elif state.cob_decision and state.cob_decision.patient_name:
+        elif not patient_name and state.cob_decision and state.cob_decision.patient_name:
             patient_name = state.cob_decision.patient_name
+        elif not patient_name and state.primary_policy:
+            matching = next((m for m in state.primary_policy.members if m.member_id == state.member_id), None)
+            if matching:
+                patient_name = f"{matching.first_name} {matching.last_name}"
+        if not patient_name:
+            patient_name = "Patient"
 
         letters: List[PreAuthLetter] = []
         policies = []

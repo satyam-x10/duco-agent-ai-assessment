@@ -1,0 +1,18 @@
+SUMMIT ORTHOPAEDIC CLINIC
+SURGICAL FEE ESTIMATE & PROCEDURE PROPOSAL
+Date: 2026-06-20
+Patient Name: Aarav Sen
+DOB: 2012-05-14
+Member ID: 98765-02
+Surgeon: Dr. Meera Shah, MD
+NPI: 1982736450
+Facility: Summit Orthopaedic Clinic
+
+Proposed Surgical Procedures:
+1. CPT 29881: Knee Arthroscopy with Partial Medial Meniscectomy
+   Estimated Billed Amount: INR 100000.00
+2. CPT 29888: Arthroscopically aided ACL reconstruction
+   Estimated Billed Amount: INR 350000.00
+
+Total Surgical Estimate: INR 450000.00
+Clinical Notes: Surgical intervention proposed pending MRI confirmation of tears.

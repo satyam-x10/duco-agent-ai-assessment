@@ -32,11 +32,20 @@ class COBAgent(Agent):
         if not state.coding_result or not state.coding_result.procedures:
             raise ValueError("No procedure codes have been extracted. COB coordination cannot proceed.")
             
-        # Build claim lines with realistic billed amounts
+        # Build claim lines preferring source-grounded amounts extracted from documents
+        amounts_by_cpt = {line.cpt_code: line.billed_amount for line in state.claim_lines}
+        if not amounts_by_cpt and state.processed_documents:
+            for doc in state.processed_documents.values():
+                if hasattr(doc, "facts") and doc.facts and doc.facts.line_items:
+                    for fact_line in doc.facts.line_items:
+                        amounts_by_cpt[fact_line.cpt_code] = fact_line.billed_amount
+
         claim_lines = []
         for procedure in state.coding_result.procedures:
-            billed_amount = CPT_BILLED_AMOUNTS.get(procedure.code, 500.00)
+            billed_amount = amounts_by_cpt.get(procedure.code, CPT_BILLED_AMOUNTS.get(procedure.code, 500.00))
             claim_lines.append(ClaimLine(cpt_code=procedure.code, billed_amount=billed_amount))
+
+        state.claim_lines = claim_lines
             
         # Extract diagnosis code strings
         diagnoses = [d.code for d in state.coding_result.diagnoses] if state.coding_result else []

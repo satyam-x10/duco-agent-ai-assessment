@@ -15,18 +15,20 @@ class AudioBriefingService:
     def generate_briefing(self, state: SharedWorkflowState) -> AudioResponse:
         logger.info(f"Generating patient audio briefing summary narration for claim {state.claim_id}")
 
-        # 1. Resolve Patient Name
-        patient_name = "Patient"
-        if state.financial_report and state.financial_report.patient_name:
+        # 1. Resolve Patient Name dynamically
+        patient_name = state.patient_name
+        if not patient_name and state.financial_report and state.financial_report.patient_name:
             patient_name = state.financial_report.patient_name
-        elif state.cob_decision and state.cob_decision.patient_name:
+        elif not patient_name and state.cob_decision and state.cob_decision.patient_name:
             patient_name = state.cob_decision.patient_name
-        elif state.member_id == "98765":
-            patient_name = "Priya Sen"
-        elif state.member_id == "54321":
-            patient_name = "Aarav Sen"
+        elif not patient_name and state.primary_policy:
+            matching = next((m for m in state.primary_policy.members if m.member_id == state.member_id), None)
+            if matching:
+                patient_name = f"{matching.first_name} {matching.last_name}"
+        if not patient_name:
+            patient_name = "Patient"
 
-        first_name = patient_name.split()[0] if patient_name else "there"
+        first_name = patient_name.split()[0] if patient_name != "Patient" else "there"
 
         # 2. Section: Greeting
         greeting_text = f"Hello {first_name}."

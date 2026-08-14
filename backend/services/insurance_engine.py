@@ -71,6 +71,25 @@ class InsuranceService:
             return member.role
         return None
 
+    def get_policies_for_member(self, patient_member: Member) -> List[InsurancePolicy]:
+        """Return deep-copied policies matching the same person across payers."""
+        matches = []
+        for policy in self._policies.values():
+            if any(
+                member.first_name.lower() == patient_member.first_name.lower()
+                and member.last_name.lower() == patient_member.last_name.lower()
+                and member.date_of_birth == patient_member.date_of_birth
+                for member in policy.members
+            ):
+                matches.append(policy.model_copy(deep=True))
+        return matches
+
+    @staticmethod
+    def get_coverage_rule(policy: InsurancePolicy, cpt_code: str) -> Optional[CoverageRule]:
+        if not policy:
+            return None
+        return next((rule for rule in policy.coverage_rules if rule.cpt_code == cpt_code), None)
+
     def is_procedure_covered(self, member_id: str, cpt_code: str) -> bool:
         """Determines if a procedure is covered under the member's active policy."""
         policy = self.get_policy(member_id)

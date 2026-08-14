@@ -20,6 +20,9 @@ class PrimaryCoverage(BaseModel):
     """Details the adjudication result of the primary insurer."""
     policy_id: str = Field(..., description="Policy ID of the primary insurer")
     is_covered: bool = Field(..., description="Whether the CPT code was covered by the primary plan")
+    allowed_amount: Optional[float] = Field(None, description="Plan contractual allowed amount")
+    contractual_writeoff: float = Field(0.0, description="Provider discount or write-off amount")
+    copay_applied: float = Field(0.0, description="Copay amount applied to the line")
     deductible_applied: float = Field(..., description="Amount of primary deductible applied to this line")
     coinsurance_rate: float = Field(..., description="Coinsurance percentage rate responsibility of the patient")
     coinsurance_amount: float = Field(..., description="Coinsurance dollar amount billed to the patient")
@@ -31,6 +34,8 @@ class SecondaryCoverage(BaseModel):
     """Details the coordination result of the secondary insurer."""
     policy_id: str = Field(..., description="Policy ID of the secondary insurer (empty string if no secondary)")
     is_covered: bool = Field(..., description="Whether the CPT code was covered by the secondary plan")
+    allowed_amount: Optional[float] = Field(None, description="Secondary plan allowed amount")
+    copay_applied: float = Field(0.0, description="Secondary copay amount applied")
     deductible_applied: float = Field(..., description="Amount of secondary deductible applied/satisfied by this line")
     coinsurance_rate: float = Field(..., description="Coinsurance percentage rate of the secondary policy")
     coinsurance_amount: float = Field(..., description="Secondary coinsurance amount calculation")

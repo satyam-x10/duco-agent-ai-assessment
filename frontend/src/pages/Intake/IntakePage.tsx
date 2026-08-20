@@ -44,8 +44,6 @@ export const IntakePage: React.FC = () => {
     const [phaseMessage, setPhaseMessage] = useState('');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [failedAgent, setFailedAgent] = useState<string | null>(null);
-    const [ocrEngine, setOcrEngine] = useState<'library' | 'gemini'>('library');
-    const [mockMode, setMockMode] = useState(false);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [currentAgent, setCurrentAgent] = useState<string | null>(null);
     const [agentFeed, setAgentFeed] = useState<AgentFeedEntry[]>([]);
@@ -93,7 +91,6 @@ export const IntakePage: React.FC = () => {
                 setPhaseMessage(message);
                 if (activeAgent !== undefined) setCurrentAgent(activeAgent ?? null);
 
-                // Detect completed agents from message
                 const completedMatch = Object.keys(AGENT_META).find(
                     name => message.includes(name + ':') && !seenAgents.has(name)
                 );
@@ -128,6 +125,88 @@ export const IntakePage: React.FC = () => {
             }
         }, 1200);
     }, [addFeedEntry, navigate]);
+
+    const buildSSEConnection = useCallback((job_id: string, seenAgents: Set<string>) => {
+        const streamUrl = `http://127.0.0.1:8000/api/v1/analysis/stream/${job_id}`;
+        let eventSource: EventSource | null = null;
+        let isClosed = false;
+
+        try {
+            eventSource = new EventSource(streamUrl);
+
+            eventSource.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.event === 'agent_start') {
+                        if (data.agent_name) setCurrentAgent(data.agent_name);
+                        if (data.progress_percent !== undefined) setProgress(data.progress_percent);
+                        if (data.message) setPhaseMessage(data.message);
+                    } else if (data.event === 'agent_complete') {
+                        if (data.agent_name && !seenAgents.has(data.agent_name)) {
+                            seenAgents.add(data.agent_name);
+                            addFeedEntry({
+                                agentName: data.agent_name,
+                                status: 'success',
+                                message: data.message || `${data.agent_name} finished successfully.`,
+                                timestamp: new Date().toLocaleTimeString(),
+                            });
+                        }
+                        if (data.progress_percent !== undefined) setProgress(data.progress_percent);
+                        if (data.message) setPhaseMessage(data.message);
+                        setCurrentAgent(null);
+                    } else if (data.event === 'agent_log') {
+                        if (data.log) {
+                            // Extract key findings into phaseMessage
+                            if (data.log.includes('[Planner Choice]') || data.log.includes('-> Extracted') || data.log.includes('-> Resolved') || data.log.includes('-> Coordinated')) {
+                                setPhaseMessage(data.log.replace(/^\[.*?\]\s*/, ''));
+                            }
+                        }
+                    } else if (data.event === 'awaiting_approval') {
+                        eventSource?.close();
+                        isClosed = true;
+                        setCurrentAgent(null);
+                        setProgress(99);
+                        setReviewWarnings(data.warnings || []);
+                        setAnalysisStatus('awaiting_approval');
+                    } else if (data.event === 'completed') {
+                        eventSource?.close();
+                        isClosed = true;
+                        setCurrentAgent(null);
+                        setProgress(100);
+                        setAnalysisStatus('completed');
+                        setTimeout(() => navigate(`/results?job_id=${job_id}`), 600);
+                    } else if (data.event === 'failed') {
+                        eventSource?.close();
+                        isClosed = true;
+                        setCurrentAgent(null);
+                        setAnalysisStatus('failed');
+                        setErrorMessage(data.message || data.error_details || 'Pipeline failed.');
+                    }
+                } catch {
+                    // Non-JSON frame (e.g. heartbeat ping)
+                }
+            };
+
+            eventSource.onerror = () => {
+                if (!isClosed) {
+                    eventSource?.close();
+                    // Fallback to robust polling loop
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                    intervalRef.current = buildPollingLoop(job_id, seenAgents);
+                }
+            };
+        } catch {
+            // Fallback immediately to polling
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            intervalRef.current = buildPollingLoop(job_id, seenAgents);
+        }
+
+        return () => {
+            isClosed = true;
+            eventSource?.close();
+        };
+    }, [addFeedEntry, navigate, buildPollingLoop]);
+
 
     // Fetch existing uploads or resume a job if job_id is passed in the URL query params
     useEffect(() => {
@@ -171,10 +250,10 @@ export const IntakePage: React.FC = () => {
         setReviewWarnings([]);
         setPhaseMessage('Contacting backend orchestrator...');
         try {
-            const { job_id } = await ApiService.startAnalysis(ocrEngine, mockMode);
+            const { job_id } = await ApiService.startAnalysis('gemini', false);
             setActiveJobId(job_id);
             setAnalysisStatus('processing');
-            intervalRef.current = buildPollingLoop(job_id, new Set<string>());
+            buildSSEConnection(job_id, new Set<string>());
         } catch (err: any) {
             setAnalysisStatus('failed');
             const detail = err?.response?.data?.detail;
@@ -601,38 +680,21 @@ export const IntakePage: React.FC = () => {
                             <div style={{ flex: 1 }}>
                                 <h4 style={{ fontSize: 14, fontWeight: 700, color: '#065f46', margin: '0 0 4px' }}>All 4 Documents Uploaded</h4>
                                 <p style={{ fontSize: 12, color: '#059669', margin: '0 0 16px' }}>The orchestrator is ready to begin Coordination of Benefits reasoning across 7 specialist AI agents.</p>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
-                                    <div>
-                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Run Mode (Select Demo for Mock Run)</label>
-                                        <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 3, gap: 3, border: '1px solid #cbd5e1' }}>
-                                            <button type="button" onClick={() => setMockMode(true)}
-                                                style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: mockMode ? '1px solid #cbd5e1' : '1px solid transparent', background: mockMode ? '#fff' : 'transparent', color: mockMode ? '#1e293b' : '#64748b', boxShadow: mockMode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
-                                                Demo (Mock Run)
-                                            </button>
-                                            <button type="button" onClick={() => setMockMode(false)}
-                                                style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: !mockMode ? '1px solid #cbd5e1' : '1px solid transparent', background: !mockMode ? '#fff' : 'transparent', color: !mockMode ? '#1e293b' : '#64748b', boxShadow: !mockMode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
-                                                Production (Gemini)
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>Image OCR Engine</label>
-                                        <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 3, gap: 3, border: '1px solid #cbd5e1', opacity: mockMode ? 0.5 : 1, pointerEvents: mockMode ? 'none' : 'auto' }}>
-                                            {(['library', 'gemini'] as const).map(eng => (
-                                                <button key={eng} type="button" onClick={() => setOcrEngine(eng)} disabled={mockMode}
-                                                    style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: mockMode ? 'default' : 'pointer', border: ocrEngine === eng ? '1px solid #cbd5e1' : '1px solid transparent', background: ocrEngine === eng ? '#fff' : 'transparent', color: ocrEngine === eng ? '#1e293b' : '#64748b', boxShadow: ocrEngine === eng ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
-                                                    {eng === 'library' ? 'Local OCR (Default)' : 'Gemini Vision OCR'}
-                                                </button>
-                                            ))}
-                                        </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, background: '#e0f2fe', color: '#0369a1', fontSize: 11, fontWeight: 700, border: '1px solid #bae6fd' }}>
+                                            🤖 7 Specialist Agents
+                                        </span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, background: '#f3e8ff', color: '#6b21a8', fontSize: 11, fontWeight: 700, border: '1px solid #e9d5ff' }}>
+                                            ⚡ Real-Time SSE Stream
+                                        </span>
                                     </div>
                                     <button onClick={startAssessment} type="button"
-                                        style={{ borderRadius: 10, background: '#2563eb', color: '#fff', border: 'none', padding: '12px 22px', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'background 0.15s', alignSelf: 'flex-end' }}
-                                        onMouseEnter={e => (e.currentTarget.style.background = '#1d4ed8')}
-                                        onMouseLeave={e => (e.currentTarget.style.background = '#2563eb')}>
-                                        🚀 Start Assessment
+                                        style={{ borderRadius: 10, background: '#2563eb', color: '#fff', border: 'none', padding: '12px 28px', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(37,99,235,0.35)', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 8 }}
+                                        onMouseEnter={e => { e.currentTarget.style.background = '#1d4ed8'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.background = '#2563eb'; e.currentTarget.style.transform = 'translateY(0)'; }}>
+                                        <span>🚀</span> Start Multi-Agent Assessment
                                     </button>
-                                    <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'flex-end', paddingBottom: 4 }}>Orchestrates 7 specialist agents</span>
                                 </div>
                             </div>
                         </div>

@@ -27,6 +27,10 @@ class ClinicalRulesService:
     def get_cpt(self, code: str) -> Optional[dict]:
         return self._rules.get("cpt", {}).get(code.strip())
 
+    def get_all_cpt_catalog(self) -> Dict[str, dict]:
+        """Returns the entire dictionary of CPT rules and descriptions."""
+        return self._rules.get("cpt", {})
+
     def get_icd10(self, code: str) -> Optional[dict]:
         return self._rules.get("icd10", {}).get(code.strip().upper())
 

@@ -64,12 +64,12 @@
     <rect width="200" height="6" rx="3" fill="url(#secondaryGrad)" />
     <text x="20" y="35" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#8b5cf6">SECONDARY PAYER</text>
     <text x="20" y="58" font-family="system-ui, sans-serif" font-size="14" font-weight="800" fill="#6d28d9">UnitedHealth</text>
-    <text x="20" y="90" font-family="system-ui, sans-serif" font-size="20" font-weight="800" fill="#6d28d9">Paid: ₹25,560.00</text>
+    <text x="20" y="90" font-family="system-ui, sans-serif" font-size="20" font-weight="800" fill="#6d28d9">Paid: ₹28,200.00</text>
     <line x1="20" y1="110" x2="180" y2="110" stroke="#f1f5f9" stroke-width="1.5" />
     <text x="20" y="140" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#475569">COB Coordination</text>
     <text x="20" y="165" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#475569">Normal Benefit Comparison</text>
     <text x="20" y="205" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#16a34a">Total Insurer Paid:</text>
-    <text x="20" y="228" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#16a34a">₹99,160.00 (88.5%)</text>
+    <text x="20" y="228" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#16a34a">₹1,01,800.00 (90.9%)</text>
   </g>
 
   <!-- Connector 3 -->
@@ -80,11 +80,11 @@
     <rect width="170" height="260" rx="12" fill="#fffbeb" stroke="#fde68a" stroke-width="1.5" />
     <rect width="170" height="6" rx="3" fill="url(#patientGrad)" />
     <text x="16" y="35" font-family="system-ui, sans-serif" font-size="10.5" font-weight="700" fill="#d97706">PATIENT OUT-OF-POCKET</text>
-    <text x="16" y="68" font-family="system-ui, sans-serif" font-size="22" font-weight="800" fill="#b45309">₹12,840.00</text>
+    <text x="16" y="68" font-family="system-ui, sans-serif" font-size="22" font-weight="800" fill="#b45309">₹10,200.00</text>
     <line x1="16" y1="90" x2="154" y2="90" stroke="#fef3c7" stroke-width="1.5" />
     <text x="16" y="125" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#78350f">Final Copay/Ded</text>
-    <text x="16" y="150" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#78350f">Share: 11.5%</text>
+    <text x="16" y="150" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#78350f">Share: 9.1%</text>
     <text x="16" y="195" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#047857">Patient Savings:</text>
-    <text x="16" y="220" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#047857">₹99,160.00</text>
+    <text x="16" y="220" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#047857">₹1,01,800.00</text>
   </g>
 </svg>

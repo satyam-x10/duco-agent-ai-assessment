@@ -1,6 +1,6 @@
 # PRIOR AUTHORIZATION REQUEST - DRAFT FOR CLINICIAN REVIEW
 
-**Date:** August 14, 2026
+**Date:** August 20, 2026
 **To:** Prior Authorization Department, BlueShield Cross
 
 > This draft is generated from uploaded source documents. A licensed clinician must verify, complete, and sign it before submission.

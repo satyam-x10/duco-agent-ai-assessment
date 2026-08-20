@@ -107,10 +107,10 @@
     "is_fully_adjudicated": true
   },
   "financial_breakdown": {
-    "report_id": "FIN-REPORT-E69A3980",
+    "report_id": "FIN-REPORT-64EF19A2",
     "claim_id": "CLAIM-PRIYA-01",
     "patient_name": "Priya Sen",
-    "generated_at": "2026-08-14T10:06:16.237234Z",
+    "generated_at": "2026-08-20T17:14:57.232641Z",
     "primary_policy_id": "BS-120-BLUE",
     "secondary_policy_id": "UH-990-GOLD",
     "breakdown": {

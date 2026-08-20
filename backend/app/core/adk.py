@@ -104,6 +104,8 @@ class Orchestrator:
         self._on_agent_complete: Optional[Callable[[str, int], Awaitable[None]]] = None
         # Optional callback invoked just before each agent starts executing
         self._on_agent_start: Optional[Callable[[str], Awaitable[None]]] = None
+        # Optional callback invoked on real-time log messages
+        self._on_log: Optional[Callable[[str], Awaitable[None]]] = None
 
     def set_progress_callback(self, callback: Callable[[str, int], Awaitable[None]]) -> None:
         """Register an async callback that receives (agent_name, progress_percent) on success."""
@@ -113,8 +115,23 @@ class Orchestrator:
         """Register an async callback that receives (agent_name) just before an agent starts."""
         self._on_agent_start = callback
 
+    def set_log_callback(self, callback: Callable[[str], Awaitable[None]]) -> None:
+        """Register an async callback that receives real-time log lines."""
+        self._on_log = callback
+
+    async def _emit_log(self, message: str) -> None:
+        """Emits a log line to disk and to registered real-time async callbacks."""
+        append_realtime_log(message)
+        if self._on_log:
+            try:
+                await self._on_log(message)
+            except Exception as e:
+                logger.warning(f"Log callback error: {e}")
+
     def _evaluate_next_step(self, state: SharedWorkflowState, completed_agents: set) -> tuple:
-        """Dynamic planner determining which agent to run next and the reasoning why."""
+        """Dynamic planner determining which agent to run next based on workflow graph and state."""
+        # Validate data dependency contracts using the formal workflow graph
+        self.workflow_graph.validate_execution_order(list(completed_agents))
         # 1. Verification of intake
         if "IntakeAgent" not in completed_agents:
             return "IntakeAgent", "Intake verification is required to validate that raw files are loaded into storage slots."

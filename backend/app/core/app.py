@@ -36,6 +36,10 @@ def get_app() -> FastAPI:
         allow_headers=["*"],
     )
     
+    # Add Security and Authentication Middleware
+    from app.middleware.auth import APIKeyAuthMiddleware
+    app.add_middleware(APIKeyAuthMiddleware)
+    
     # Bind global exception handlers
     register_exception_handlers(app)
     

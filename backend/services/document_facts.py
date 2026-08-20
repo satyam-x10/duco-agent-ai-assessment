@@ -183,20 +183,30 @@ def extract_document_facts(text: str) -> DocumentFacts:
             facts.total_billed = float(bare_total_match.group(1).replace(",", ""))
 
     # When a bill lists named services and only a document total, map the
-    # services through a versioned deterministic catalog and allocate the total
+    # services through the versioned deterministic clinical catalog and allocate the total
     # evenly. The allocation is explicitly labeled for mandatory human review.
     if not facts.line_items and facts.total_billed:
-        service_catalog = (
-            ("physical therapy evaluation", "97161"),
-            ("therapeutic exercise", "97110"),
-            ("manual therapy", "97140"),
-            ("neuromuscular re-education", "97112"),
-            ("neuromuscular reeducation", "97112"),
-        )
+        from services.clinical_rules import ClinicalRulesService
+        cpt_catalog = ClinicalRulesService().get_all_cpt_catalog()
+        
         inferred_codes = []
-        for phrase, code in service_catalog:
+        for cpt_code, spec in cpt_catalog.items():
+            desc = (spec.get("description") or "").lower()
+            if desc and desc in lower_text and cpt_code not in inferred_codes:
+                inferred_codes.append(cpt_code)
+                
+        # Also check standard common procedure phrases if not matched by full description
+        common_phrases = {
+            "physical therapy evaluation": "97161",
+            "therapeutic exercise": "97110",
+            "manual therapy": "97140",
+            "neuromuscular re-education": "97112",
+            "neuromuscular reeducation": "97112",
+        }
+        for phrase, code in common_phrases.items():
             if phrase in lower_text and code not in inferred_codes:
                 inferred_codes.append(code)
+
         if inferred_codes:
             cents = round(facts.total_billed * 100)
             base_cents, remainder = divmod(cents, len(inferred_codes))

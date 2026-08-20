@@ -309,11 +309,12 @@ def build_svg_and_eob():
     from services.cost_flow import CostFlowVisualizerService
     
     # Generate dynamic SVG from the verified Aarav COB scenario
+    # Exact adjudication numbers: Billed 112000.0, Primary Paid 73600.0, Secondary Paid 28200.0, Patient Resp 10200.0
     svg_content = CostFlowVisualizerService.generate_svg(
         billed=112000.0,
         primary_paid=73600.0,
-        secondary_paid=25560.0,
-        patient_responsibility=12840.0,
+        secondary_paid=28200.0,
+        patient_responsibility=10200.0,
         primary_payer="BlueShield Cross",
         secondary_payer="UnitedHealth",
         patient_name="Aarav Sen",
@@ -339,9 +340,9 @@ def build_svg_and_eob():
 
 | Service Description | CPT Code | Billed Amount | Primary Paid (BlueShield) | Secondary Paid (UnitedHealth) | Patient Out-of-Pocket | Adjudication Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **MRI Knee Joint** | `73721` | ₹12,000.00 | ₹0.00 *(Applied to Ded)* | ₹2,000.00 | ₹10,000.00 | Coordinated |
-| **Arthroscopic Meniscectomy** | `29881` | ₹1,00,000.00 | ₹73,600.00 | ₹23,560.00 | ₹2,840.00 | Coordinated (Preauth Req) |
-| **TOTALS** | — | **₹1,12,000.00** | **₹73,600.00** | **₹25,560.00** | **₹12,840.00** | **Conservation Law Verified** |
+| **MRI Knee Joint** | `73721` | ₹12,000.00 | ₹0.00 *(Applied to Ded)* | ₹1,800.00 | ₹10,200.00 | Coordinated |
+| **Arthroscopic Meniscectomy** | `29881` | ₹1,00,000.00 | ₹73,600.00 | ₹26,400.00 | ₹0.00 | Coordinated (Preauth Req) |
+| **TOTALS** | — | **₹1,12,000.00** | **₹73,600.00** | **₹28,200.00** | **₹10,200.00** | **Conservation Law Verified** |
 
 ---
 
@@ -353,7 +354,7 @@ def build_svg_and_eob():
 ---
 
 ## 3. Financial Invariant Verification Check
-$$\\text{Primary Paid (₹73,600.00)} + \\text{Secondary Paid (₹25,560.00)} + \\text{Patient Responsibility (₹12,840.00)} = \\text{Total Billed (₹1,12,000.00)}$$
+$$\\text{Primary Paid (₹73,600.00)} + \\text{Secondary Paid (₹28,200.00)} + \\text{Patient Responsibility (₹10,200.00)} = \\text{Total Billed (₹1,12,000.00)}$$
 *All calculations are deterministic and verified with Decimal precision (0.01 tolerance).*
 """
     with open(OUT_DIR / "explanation_of_benefits_sample.md", "w", encoding="utf-8") as f:

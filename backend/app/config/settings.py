@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     API_V1_STR: str = "/api/v1"
     
+    # Security and Auth
+    API_AUTH_KEY: str = "duco-agent-secure-key-2026"
+    AUTH_ENABLED: bool = False  # Set to True for production authentication
+    
     # Storage Configuration
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB
     UPLOAD_DIR: str = "uploads"

@@ -32,8 +32,9 @@ backend/uploads/*
 # Environment and sensitive keys
 .env
 .env.*
-!.env.example
-*.local
+**/.env
+**/.env.*
+!**/.env.example
 
 # System/IDE files
 .DS_Store

@@ -215,3 +215,23 @@ class AudioBriefingService:
             briefing=briefing,
             generated_at=datetime.utcnow().isoformat() + "Z",
         )
+
+    def synthesize_mp3(self, briefing: AudioBriefing) -> bytes:
+        """
+        Synthesizes real spoken narration audio using gTTS.
+        Returns the raw MP3 byte array.
+        """
+        if not briefing or not briefing.full_narration:
+            raise ValueError("Audio briefing has no narration text to synthesize.")
+        
+        import io
+        from gtts import gTTS
+        try:
+            tts = gTTS(text=briefing.full_narration, lang='en')
+            fp = io.BytesIO()
+            tts.write_to_fp(fp)
+            return fp.getvalue()
+        except Exception as e:
+            logger.error(f"TTS synthesis failed: {e}")
+            raise RuntimeError(f"Online text-to-speech generation failed: {str(e)}") from e
+

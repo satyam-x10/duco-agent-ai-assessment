@@ -149,14 +149,22 @@ class DualCoverageWorkflowGraph:
 
     def validate_execution_order(self, executed_agents: List[str]) -> bool:
         """Validates that a list of executed agent names satisfies dependency constraints."""
-        seen = set()
+        available_outputs = {"claim_id", "storage_slots", "ocr_engine", "member_id", "patient_name"}
         for name in executed_agents:
             spec = self.get_step(name)
             if not spec:
                 return False
             # Check required inputs
-            seen.add(name)
+            for req in spec.required_inputs:
+                if req not in available_outputs:
+                    logger.warning(f"Dependency validation failed: Agent '{name}' requires '{req}', but it is not available in produced outputs.")
+                    return False
+            available_outputs.update(spec.produced_outputs)
         return True
+
+    def find_transitions_from(self, source_agent: str) -> List[WorkflowTransition]:
+        """Returns all registered transition edges from a given source agent."""
+        return [t for t in self.transitions if t.source_agent == source_agent]
 
 
 # Global default instance
@@ -166,3 +174,4 @@ DUAL_COVERAGE_WORKFLOW_SPEC = DualCoverageWorkflowGraph()
 def get_dual_coverage_workflow() -> DualCoverageWorkflowGraph:
     """Returns the singleton DualCoverageWorkflowGraph specification."""
     return DUAL_COVERAGE_WORKFLOW_SPEC
+

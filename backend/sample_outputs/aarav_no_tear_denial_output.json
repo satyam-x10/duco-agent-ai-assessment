@@ -69,10 +69,10 @@
     "is_fully_adjudicated": true
   },
   "financial_breakdown": {
-    "report_id": "FIN-REPORT-08027578",
+    "report_id": "FIN-REPORT-91DF7C8C",
     "claim_id": "CLAIM-DENIAL-01",
     "patient_name": "Aarav Sen",
-    "generated_at": "2026-08-14T10:06:25.938205Z",
+    "generated_at": "2026-08-20T17:15:02.417075Z",
     "primary_policy_id": "BS-120-BLUE",
     "secondary_policy_id": null,
     "breakdown": {

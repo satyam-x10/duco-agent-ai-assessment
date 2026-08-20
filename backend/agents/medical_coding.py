@@ -28,20 +28,10 @@ class MedicalCodingAgent(Agent):
                 logger.info(f"{self.name} detected active reflection warnings: {reflection_warnings}")
         
         # Analyze clinical files and aggregate coding results
+        from services.clinical_rules import ClinicalRulesService
+        rules_service = ClinicalRulesService()
+
         if state.mock_mode:
-            diagnosis_descriptions = {
-                "M54.50": "Low back pain, unspecified",
-                "M23.231": "Derangement of posterior horn of medial meniscus, right knee",
-                "S83.511A": "Sprain of anterior cruciate ligament of right knee",
-                "Z04.89": "Encounter for examination and observation",
-            }
-            procedure_descriptions = {
-                "97161": "Physical therapy evaluation, low complexity",
-                "97110": "Therapeutic exercises",
-                "73721": "MRI lower extremity joint without contrast",
-                "29881": "Knee arthroscopy with meniscectomy",
-                "29888": "Arthroscopically aided ACL reconstruction",
-            }
             for doc_type, doc in state.processed_documents.items():
                 # Skip user transcript query itself for medical coding, process clinical reports/invoices only
                 if doc_type == DocumentType.USER_QUERY_TRANSCRIPT:
@@ -52,7 +42,7 @@ class MedicalCodingAgent(Agent):
                     diagnoses=[
                         Diagnosis(
                             code=code,
-                            description=diagnosis_descriptions.get(code, "Diagnosis documented in source"),
+                            description=(rules_service.get_icd10(code) or {}).get("description", "Diagnosis documented in source"),
                             confidence=1.0,
                         )
                         for code in doc.facts.diagnosis_codes
@@ -60,7 +50,7 @@ class MedicalCodingAgent(Agent):
                     procedures=[
                         Procedure(
                             code=line.cpt_code,
-                            description=procedure_descriptions.get(line.cpt_code, "Procedure documented in source"),
+                            description=(rules_service.get_cpt(line.cpt_code) or {}).get("description", "Procedure documented in source"),
                             confidence=1.0,
                         )
                         for line in doc.facts.line_items
